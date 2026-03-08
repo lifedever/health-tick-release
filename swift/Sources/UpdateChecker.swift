@@ -165,9 +165,9 @@ final class UpdateChecker: ObservableObject {
     private func showDownloadComplete(file: URL) {
         let alert = NSAlert()
         alert.messageText = "下载完成"
-        alert.informativeText = "已保存到「下载」文件夹。\n请打开 DMG 文件并将 HealthTick 拖入 Applications 替换旧版本。"
+        alert.informativeText = "已保存到「下载」文件夹。\n点击「安装并退出」将打开 DMG 并退出当前应用，方便你拖入替换。"
         alert.alertStyle = .informational
-        alert.addButton(withTitle: "打开 DMG")
+        alert.addButton(withTitle: "安装并退出")
         alert.addButton(withTitle: "稍后安装")
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
@@ -175,6 +175,9 @@ final class UpdateChecker: ObservableObject {
         NSApp.setActivationPolicy(.accessory)
         if resp == .alertFirstButtonReturn {
             NSWorkspace.shared.open(file)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                NSApp.terminate(nil)
+            }
         }
     }
 
