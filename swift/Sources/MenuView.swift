@@ -115,6 +115,25 @@ struct MenuView: View {
                 }
             }
 
+            // Update hint
+            if UpdateChecker.shared.hasUpdate, let ver = UpdateChecker.shared.latestVersion {
+                Button {
+                    UpdateChecker.shared.showUpdateAlertPublic()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.down.circle.fill")
+                            .foregroundStyle(.blue)
+                        Text("v\(ver) 可用，点击更新")
+                            .font(.caption)
+                            .foregroundStyle(.blue)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 4)
+                    .background(.blue.opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
+                }
+                .buttonStyle(.borderless)
+            }
+
             Divider().padding(.horizontal, 4)
 
             // Controls

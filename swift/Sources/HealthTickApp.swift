@@ -4,6 +4,7 @@ import SwiftUI
 struct HealthTickApp: App {
     @StateObject private var state = AppState()
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    @Environment(\.openWindow) private var openWindow
 
     var body: some Scene {
         MenuBarExtra {
@@ -18,7 +19,55 @@ struct HealthTickApp: App {
             SettingsView()
                 .environmentObject(state)
         }
-        .defaultSize(width: 400, height: 320)
+        .defaultSize(width: 440, height: 480)
+        .commands {
+            // Replace default "New Window" etc
+            CommandGroup(replacing: .newItem) {}
+
+            // HealthTick menu
+            CommandGroup(after: .appInfo) {
+                Button("检查更新...") {
+                    UpdateChecker.shared.check(silent: false)
+                }
+            }
+
+            // File menu - settings
+            CommandGroup(replacing: .sidebar) {
+                Button("设置") {
+                    openWindow(id: "settings")
+                    bringToFront()
+                }
+                .keyboardShortcut(",", modifiers: .command)
+            }
+
+            // Window menu items
+            CommandGroup(before: .windowArrangement) {
+                Button("成就") {
+                    openWindow(id: "stats")
+                    bringToFront()
+                }
+                .keyboardShortcut("1", modifiers: .command)
+
+                Divider()
+            }
+
+            // Help menu
+            CommandGroup(replacing: .help) {
+                Button("HealthTick 帮助") {
+                    openWindow(id: "helpguide")
+                    bringToFront()
+                }
+                .keyboardShortcut("?", modifiers: .command)
+
+                Divider()
+
+                Button("赞助支持") {
+                    if let url = URL(string: "https://github.com/lifedever/health-tick-release#-赞助支持") {
+                        NSWorkspace.shared.open(url)
+                    }
+                }
+            }
+        }
 
         Window("帮助", id: "helpguide") {
             HelpView()
@@ -39,6 +88,11 @@ struct HealthTickApp: App {
         case .waiting: return "hand.raised.fill"
         case .paused: return "pause.circle"
         }
+    }
+
+    private func bringToFront() {
+        NSApp.setActivationPolicy(.regular)
+        NSApp.activate(ignoringOtherApps: true)
     }
 }
 

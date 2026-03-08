@@ -101,6 +101,11 @@ final class UpdateChecker: ObservableObject {
         }.resume()
     }
 
+    func showUpdateAlertPublic() {
+        guard let version = latestVersion else { return }
+        showUpdateAlert(version: version)
+    }
+
     private func showUpdateAlert(version: String) {
         let arch = isAppleSilicon ? "Apple Silicon" : "Intel"
         let alert = NSAlert()
