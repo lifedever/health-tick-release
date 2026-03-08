@@ -108,7 +108,8 @@ final class AppState: ObservableObject {
     private func startTicking() {
         timer?.invalidate()
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.tick() }
+            guard let self else { return }
+            Task { @MainActor [weak self] in self?.tick() }
         }
     }
 
@@ -131,7 +132,8 @@ final class AppState: ObservableObject {
             phase = .alerting
             remainingSeconds = 0
             alertRepeatTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
-                Task { @MainActor in self?.playSound("Ping") }
+                guard let self else { return }
+                Task { @MainActor [weak self] in self?.playSound("Ping") }
             }
             showBreakAlert(reminder)
         } else {

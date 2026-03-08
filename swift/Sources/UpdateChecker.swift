@@ -30,7 +30,8 @@ final class UpdateChecker: ObservableObject {
         request.timeoutInterval = 10
 
         URLSession.shared.dataTask(with: request) { [weak self] data, _, error in
-            Task { @MainActor in
+            guard let self else { return }
+            Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.isChecking = false
 

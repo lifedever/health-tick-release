@@ -203,7 +203,8 @@ final class BreakOverlayManager {
 
     private func startMonitoring() {
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.monitorTick() }
+            guard let self else { return }
+            Task { @MainActor [weak self] in self?.monitorTick() }
         }
     }
 
