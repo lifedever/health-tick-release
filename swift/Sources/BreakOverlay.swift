@@ -44,6 +44,8 @@ final class BreakOverlayManager {
     private var menuPinTimer: Timer?
     private weak var menuBarExtraPanel: NSPanel?
     private var isMenuWindowMode = false
+    private var originalPanelLevel: NSWindow.Level?
+    private var originalHidesOnDeactivate: Bool?
 
     func show(seconds: Int) {
         remaining = seconds
@@ -105,6 +107,8 @@ final class BreakOverlayManager {
                 && panel.styleMask.contains(.fullSizeContentView)
                 && panel.frame.width < 350 {
                 menuBarExtraPanel = panel
+                originalPanelLevel = panel.level
+                originalHidesOnDeactivate = panel.hidesOnDeactivate
                 panel.hidesOnDeactivate = false
                 panel.level = .floating
                 panel.orderFrontRegardless()
@@ -127,10 +131,12 @@ final class BreakOverlayManager {
         menuPinTimer?.invalidate()
         menuPinTimer = nil
         if let panel = menuBarExtraPanel {
-            panel.hidesOnDeactivate = true
-            panel.level = .normal
+            panel.hidesOnDeactivate = originalHidesOnDeactivate ?? true
+            panel.level = originalPanelLevel ?? .statusBar
         }
         menuBarExtraPanel = nil
+        originalPanelLevel = nil
+        originalHidesOnDeactivate = nil
     }
 
     // MARK: - Floating window
