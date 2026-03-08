@@ -133,6 +133,7 @@ final class BreakOverlayManager {
         if let panel = menuBarExtraPanel {
             panel.hidesOnDeactivate = originalHidesOnDeactivate ?? true
             panel.level = originalPanelLevel ?? .statusBar
+            panel.orderOut(nil)
         }
         menuBarExtraPanel = nil
         originalPanelLevel = nil

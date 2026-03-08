@@ -21,7 +21,6 @@ struct MenuView: View {
                         style: StrokeStyle(lineWidth: 3, lineCap: .round)
                     )
                     .rotationEffect(.degrees(-90))
-                    .animation(.linear(duration: 1), value: timerProgress)
 
                 VStack(spacing: 2) {
                     Text(state.formattedTime)
