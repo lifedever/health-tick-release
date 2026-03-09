@@ -245,7 +245,7 @@ struct MenuView: View {
             }
 
             controlButton(title: L.settings, icon: "gear") {
-                openWindow(id: "settings")
+                openWindow(id: "preferences")
                 bringToFront()
             }
         }

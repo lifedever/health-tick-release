@@ -15,7 +15,7 @@ struct HealthTickApp: App {
         }
         .menuBarExtraStyle(.window)
 
-        Window(L.settingsWindow, id: "settings") {
+        Window(L.settingsWindow, id: "preferences") {
             SettingsView()
                 .environmentObject(state)
         }
@@ -33,7 +33,7 @@ struct HealthTickApp: App {
 
             CommandGroup(replacing: .sidebar) {
                 Button(L.settings) {
-                    openWindow(id: "settings")
+                    openWindow(id: "preferences")
                     bringToFront()
                 }
                 .keyboardShortcut(",", modifiers: .command)
