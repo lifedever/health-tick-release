@@ -60,11 +60,7 @@
 
 ## 📸 截图
 
-<p align="center">
-  <img src="screenshot.png" width="420" alt="HealthTick 菜单栏">
-  &nbsp;&nbsp;
-  <img src="screenshot-settings.png" width="420" alt="HealthTick 设置">
-</p>
+<table><tr><td><img src="screenshot.png" width="400" alt="HealthTick 菜单栏"></td><td><img src="screenshot-settings.png" width="400" alt="HealthTick 设置"></td></tr></table>
 
 ---
 
