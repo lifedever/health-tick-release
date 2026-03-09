@@ -196,13 +196,13 @@ struct StatsWindowView: View {
                 }
 
                 HStack(spacing: 5) {
-                    Text(L.less).font(.system(size: 10)).foregroundStyle(.quaternary)
+                    Text(L.less).font(.system(size: 10)).foregroundStyle(.primary.opacity(0.45))
                     ForEach([0.0, 0.25, 0.5, 0.75, 1.0], id: \.self) { r in
                         RoundedRectangle(cornerRadius: 2)
                             .fill(heatColor(ratio: r))
                             .frame(width: 14, height: 14)
                     }
-                    Text(L.more).font(.system(size: 10)).foregroundStyle(.quaternary)
+                    Text(L.more).font(.system(size: 10)).foregroundStyle(.primary.opacity(0.45))
                     Spacer()
                 }
                 .padding(.top, 4)
