@@ -13,6 +13,9 @@
   <a href="https://github.com/lifedever/health-tick-release/releases/latest">
     <img src="https://img.shields.io/github/v/release/lifedever/health-tick-release?style=flat-square&color=34D399&label=%E6%9C%80%E6%96%B0%E7%89%88%E6%9C%AC" alt="Latest Release">
   </a>
+  <a href="https://github.com/lifedever/health-tick-release/releases">
+    <img src="https://img.shields.io/github/downloads/lifedever/health-tick-release/total?style=flat-square&color=7C3AED&label=%E4%B8%8B%E8%BD%BD%E6%AC%A1%E6%95%B0" alt="Downloads">
+  </a>
   <img src="https://img.shields.io/badge/平台-macOS%2014%2B-blue?style=flat-square" alt="Platform">
   <img src="https://img.shields.io/badge/价格-免费-green?style=flat-square" alt="Free">
 </p>
