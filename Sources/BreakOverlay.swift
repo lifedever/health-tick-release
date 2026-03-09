@@ -60,6 +60,12 @@ struct BreakCardView: View {
         }
         .buttonStyle(.borderless)
         .padding(.horizontal, fullscreen ? 0 : 20)
+
+        if state.config.shortcutEnabled {
+            Text(L.shortcutQuickConfirm(state.config.shortcutDisplay))
+                .font(.system(size: fullscreen ? 12 : 10))
+                .foregroundStyle(.secondary.opacity(0.6))
+        }
     }
 
     // MARK: - Break content (circular timer)
@@ -163,6 +169,12 @@ struct BreakCardView: View {
         }
         .buttonStyle(.borderless)
         .padding(.horizontal, fullscreen ? 0 : 20)
+
+        if state.config.shortcutEnabled {
+            Text(L.shortcutQuickConfirm(state.config.shortcutDisplay))
+                .font(.system(size: fullscreen ? 12 : 10))
+                .foregroundStyle(.secondary.opacity(0.6))
+        }
     }
 }
 
@@ -324,6 +336,9 @@ final class BreakOverlayManager {
                 panel.hidesOnDeactivate = false
                 panel.level = .floating
                 panel.orderFrontRegardless()
+                // Activate app so keyboard shortcuts work
+                NSApp.activate(ignoringOtherApps: true)
+                panel.makeKey()
                 return
             }
         }

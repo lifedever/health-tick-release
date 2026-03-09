@@ -112,6 +112,9 @@ final class Database {
                        let arr = try? JSONDecoder().decode(Set<Int>.self, from: data) {
                         config.workDays = arr
                     }
+                case "shortcut_enabled": config.shortcutEnabled = value == "1"
+                case "shortcut_keycode": config.shortcutKeyCode = UInt16(value) ?? 36
+                case "shortcut_modifiers": config.shortcutModifiers = UInt(value) ?? 1048576
                 default: break
                 }
             }
@@ -150,6 +153,9 @@ final class Database {
         let workDaysJSON = (try? JSONEncoder().encode(config.workDays))
             .flatMap { String(data: $0, encoding: .utf8) } ?? "[2,3,4,5,6]"
         exec("INSERT OR REPLACE INTO config (key, value) VALUES ('work_days', '\(workDaysJSON)')")
+        exec("INSERT OR REPLACE INTO config (key, value) VALUES ('shortcut_enabled', '\(config.shortcutEnabled ? "1" : "0")')")
+        exec("INSERT OR REPLACE INTO config (key, value) VALUES ('shortcut_keycode', '\(config.shortcutKeyCode)')")
+        exec("INSERT OR REPLACE INTO config (key, value) VALUES ('shortcut_modifiers', '\(config.shortcutModifiers)')")
     }
 
     // MARK: - Records
@@ -346,6 +352,34 @@ final class Database {
 
     func totalCount() -> Int {
         queryInt("SELECT COUNT(*) FROM records")
+    }
+
+    func activeDays() -> Int {
+        queryInt("SELECT COUNT(DISTINCT date) FROM records")
+    }
+
+    func bestDayCount() -> (String, Int) {
+        var stmt: OpaquePointer?
+        let sql = "SELECT date, COUNT(*) as cnt FROM records GROUP BY date ORDER BY cnt DESC LIMIT 1"
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return ("", 0) }
+        defer { sqlite3_finalize(stmt) }
+        if sqlite3_step(stmt) == SQLITE_ROW {
+            let d = String(cString: sqlite3_column_text(stmt, 0))
+            let c = Int(sqlite3_column_int(stmt, 1))
+            return (d, c)
+        }
+        return ("", 0)
+    }
+
+    func firstRecordDate() -> String? {
+        var stmt: OpaquePointer?
+        let sql = "SELECT date FROM records ORDER BY date ASC LIMIT 1"
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
+        defer { sqlite3_finalize(stmt) }
+        if sqlite3_step(stmt) == SQLITE_ROW {
+            return String(cString: sqlite3_column_text(stmt, 0))
+        }
+        return nil
     }
 
     // MARK: - Onboarding

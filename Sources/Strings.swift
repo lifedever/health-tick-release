@@ -100,11 +100,17 @@ struct L {
     static var unitTimes: String { isZh ? "次" : "times" }
     static var breakWindow: String { isZh ? "休息窗口" : "Break Window" }
     static var preview: String { isZh ? "预览" : "Preview" }
+    static var badgeUnlocked: String { isZh ? "恭喜解锁新徽章！" : "Badge Unlocked!" }
     static var breakConfirm: String { isZh ? "休息前确认" : "Confirm Before Break" }
     static var reminderSound: String { isZh ? "提醒声音" : "Reminder Sound" }
     static var activityDetectSound: String { isZh ? "操作检测提示音" : "Activity Detection Sound" }
     static var alertSoundLabel: String { isZh ? "提醒声音" : "Alert Sound" }
     static var detectSoundLabel: String { isZh ? "检测提示音" : "Detection Sound" }
+    static var shortcutLabel: String { isZh ? "快捷键" : "Shortcut" }
+    static var shortcutRecording: String { isZh ? "请按下按键…" : "Press a key…" }
+    static var shortcutClickToChange: String { isZh ? "点击修改" : "Click to edit" }
+    static func shortcutQuickConfirm(_ key: String) -> String { isZh ? "按下 \(key) 快速确认" : "Press \(key) to confirm" }
+    static var shortcutHint: String { isZh ? "开启后，休息提醒弹出或休息结束时，可按快捷键快速确认，无需点击按钮。仅在应用窗口获得焦点时生效。" : "When enabled, press the shortcut to quickly confirm when the break reminder appears or when break ends. Only works when the app window is focused." }
     static var launchAtLogin: String { isZh ? "开机自启动" : "Launch at Login" }
     static var language: String { isZh ? "语言" : "Language" }
     static var appearance: String { isZh ? "外观" : "Appearance" }
@@ -153,6 +159,13 @@ struct L {
     static var less: String { isZh ? "少" : "Less" }
     static var more: String { isZh ? "多" : "More" }
     static func dayLabel(_ d: Int) -> String { isZh ? "\(d)日" : "\(d)" }
+    static var activeDays: String { isZh ? "活跃天数" : "Active Days" }
+    static var bestDay: String { isZh ? "单日最高" : "Best Day" }
+    static var avgDaily: String { isZh ? "日均完成" : "Daily Avg" }
+    static var usingDays: String { isZh ? "使用天数" : "Days Using" }
+    static func timesUnit(_ n: Int) -> String { isZh ? "\(n) 次" : "\(n)" }
+    static var tabStats: String { isZh ? "统计" : "Statistics" }
+    static var tabBadges: String { isZh ? "徽章墙" : "Badges" }
     static var earnedBadges: String { isZh ? "已获得徽章" : "Badges Earned" }
     static func badgeCount(_ n: Int) -> String { isZh ? "\(n) 枚" : "\(n)" }
     static var noBadgesYet: String { isZh ? "坚持打卡解锁徽章" : "Keep checking in to unlock badges" }
@@ -303,9 +316,11 @@ struct L {
     }
     static var helpBadgeSystem: String { isZh ? "徽章激励体系" : "Badge System" }
     static var helpBadgeSystemDesc: String {
-        isZh ? "连续每天达标可解锁徽章。徽章只有获得后才会显示，保持神秘感！以下是完整的徽章列表："
-            : "Unlock badges by meeting your daily goal consecutively. Badges are hidden until earned! Here's the complete list:"
+        isZh ? "通过连续达标或累计打卡解锁徽章。徽章只有获得后才会显示，保持神秘感！以下是完整的徽章列表："
+            : "Unlock badges by consecutive streaks or cumulative check-ins. Badges are hidden until earned! Here's the complete list:"
     }
+    static var helpBadgeStreak: String { isZh ? "连续打卡徽章" : "Streak Badges" }
+    static var helpBadgeTotal: String { isZh ? "累计打卡徽章" : "Cumulative Badges" }
     static var helpTips: String { isZh ? "使用建议" : "Tips" }
     static var helpTip1: String { isZh ? "推荐工作 45-60 分钟，休息 2-5 分钟，符合番茄工作法理念。" : "Work 45-60 min, rest 2-5 min — aligns with the Pomodoro technique." }
     static var helpTip2: String { isZh ? "每日目标建议设为 6-8 次，对应 6-8 小时工作时间。" : "Set daily goal to 6-8 times, matching 6-8 hours of work." }

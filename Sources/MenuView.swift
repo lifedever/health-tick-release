@@ -240,7 +240,7 @@ struct MenuView: View {
         case .working: return .green
         case .breaking: return .orange
         case .alerting: return .red
-        case .paused: return .gray
+        case .paused: return .orange
         case .waiting: return .blue
         }
     }

@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import AppKit
+import SwiftUI
 
 enum BreakPosition: String, CaseIterable, Equatable {
     case menuWindow = "menu_window"
@@ -79,6 +80,34 @@ let breakActivities: [BreakActivity] = [
     BreakActivity(icon: "arrow.up.and.down", textZh: "伸展脊柱，改善坐姿", textEn: "Stretch your spine, improve posture"),
 ]
 
+func keyCodeToString(_ keyCode: UInt16) -> String {
+    switch keyCode {
+    case 36: return "↩"
+    case 48: return "⇥"
+    case 49: return "␣"
+    case 51: return "⌫"
+    case 53: return "⎋"
+    case 76: return "⌅"
+    case 123: return "←"
+    case 124: return "→"
+    case 125: return "↓"
+    case 126: return "↑"
+    case 0: return "A"; case 1: return "S"; case 2: return "D"; case 3: return "F"
+    case 4: return "H"; case 5: return "G"; case 6: return "Z"; case 7: return "X"
+    case 8: return "C"; case 9: return "V"; case 11: return "B"; case 12: return "Q"
+    case 13: return "W"; case 14: return "E"; case 15: return "R"; case 16: return "Y"
+    case 17: return "T"; case 18: return "1"; case 19: return "2"; case 20: return "3"
+    case 21: return "4"; case 22: return "6"; case 23: return "5"; case 24: return "="
+    case 25: return "9"; case 26: return "7"; case 27: return "-"; case 28: return "8"
+    case 29: return "0"; case 31: return "O"; case 32: return "U"; case 34: return "I"
+    case 35: return "P"; case 37: return "L"; case 38: return "J"; case 40: return "K"
+    case 45: return "N"; case 46: return "M"
+    case 122: return "F1"; case 120: return "F2"; case 99: return "F3"; case 118: return "F4"
+    case 96: return "F5"; case 97: return "F6"; case 98: return "F7"; case 100: return "F8"
+    default: return "?"
+    }
+}
+
 struct AppConfig: Equatable {
     var workMinutes: Int = 60
     var breakMinutes: Int = 2
@@ -94,6 +123,20 @@ struct AppConfig: Equatable {
     var appearance: AppAppearance = .system
     var quietHours: [QuietHourPeriod] = []
     var workDays: Set<Int> = [2, 3, 4, 5, 6]  // Calendar weekday: 2=Mon...6=Fri
+    var shortcutEnabled: Bool = false
+    var shortcutKeyCode: UInt16 = 36  // Return
+    var shortcutModifiers: UInt = 1048576  // Command
+
+    var shortcutDisplay: String {
+        var parts: [String] = []
+        let mods = NSEvent.ModifierFlags(rawValue: shortcutModifiers)
+        if mods.contains(.control) { parts.append("⌃") }
+        if mods.contains(.option) { parts.append("⌥") }
+        if mods.contains(.shift) { parts.append("⇧") }
+        if mods.contains(.command) { parts.append("⌘") }
+        parts.append(keyCodeToString(shortcutKeyCode))
+        return parts.joined()
+    }
 }
 
 struct Badge {
@@ -126,7 +169,7 @@ let allBadges: [Badge] = [
 ]
 
 let allTotalBadges: [Badge] = [
-    Badge(days: 50, icon: "🔢", isTotal: true),
+    Badge(days: 50, icon: "🎖️", isTotal: true),
     Badge(days: 100, icon: "💯", isTotal: true),
     Badge(days: 200, icon: "🎯", isTotal: true),
     Badge(days: 500, icon: "🚀", isTotal: true),
@@ -160,6 +203,7 @@ final class AppState: ObservableObject {
     @Published var showOnboarding: Bool = false
     @Published var currentBreakActivity: BreakActivity?
     @Published var currentReminder: String?
+    @Published var celebrateBadge: Badge?
 
     private var currentSessionId: Int64?
     private var breakStartDate: Date?
@@ -175,6 +219,7 @@ final class AppState: ObservableObject {
 
     private var configWatcher: AnyCancellable?
     private var lastSavedConfig: AppConfig?
+    private var localMonitor: Any?
 
     var earnedTotalBadges: [Badge] {
         allTotalBadges.filter { totalCount >= $0.days }
@@ -200,6 +245,7 @@ final class AppState: ObservableObject {
         refreshStats()
 
         startQuietCheckTimer()
+        setupShortcutMonitors()
 
         // Delay so onChange in HealthTickApp can catch the transition
         if !db.isOnboardingCompleted() {
@@ -207,6 +253,7 @@ final class AppState: ObservableObject {
                 self?.showOnboarding = true
             }
         }
+
 
         // Save timer state on app quit
         NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
@@ -293,10 +340,6 @@ final class AppState: ObservableObject {
         if config.breakConfirm {
             phase = .alerting
             remainingSeconds = 0
-            alertRepeatTimer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in
-                guard let self else { return }
-                Task { @MainActor [weak self] in self?.playSound() }
-            }
             overlayManager.pinForAlert()
         } else {
             startBreak()
@@ -344,8 +387,8 @@ final class AppState: ObservableObject {
         // For floating/menuWindow: keep panels open, SwiftUI shows waiting content
         if config.breakPosition == .fullscreen {
             overlayManager.hide()
-            overlayManager.pinForAlert()
         }
+        overlayManager.pinForAlert()
 
         let actualSeconds: Int?
         if let start = breakStartDate {
@@ -357,13 +400,25 @@ final class AppState: ObservableObject {
             db.endSessionBreak(sessionId: sid, actualSeconds: actualSeconds, skipped: false)
         }
 
+        let oldStreak = maxStreak
+        let oldTotal = totalCount
         db.addRecord()
         refreshStats()
+        pendingBadge = detectNewBadge(oldStreak: oldStreak, oldTotal: oldTotal)
     }
+
+    private var pendingBadge: Badge?
 
     func confirmReturn() {
         overlayManager.hideAll()
+        let badge = pendingBadge
+        pendingBadge = nil
         startWork()
+        if let badge {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                self?.showBadgeCelebration(badge)
+            }
+        }
     }
 
     // MARK: - Pause / Reset
@@ -408,6 +463,76 @@ final class AppState: ObservableObject {
         totalCount = db.totalCount()
     }
 
+    private func detectNewBadge(oldStreak: Int, oldTotal: Int) -> Badge? {
+        for badge in allBadges {
+            if maxStreak >= badge.days && oldStreak < badge.days { return badge }
+        }
+        for badge in allTotalBadges {
+            if totalCount >= badge.days && oldTotal < badge.days { return badge }
+        }
+        return nil
+    }
+
+    private var celebrationWindow: NSPanel?
+    private var celebrationId: UUID?
+
+    func showBadgeCelebration(_ badge: Badge) {
+        // Close existing
+        celebrationWindow?.orderOut(nil)
+        celebrationWindow = nil
+        celebrateBadge = nil
+        celebrationId = nil
+
+        // Small delay if replacing, so the old one visually clears
+        let delay: Double = 0.1
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            self?.doShowCelebration(badge)
+        }
+    }
+
+    private func doShowCelebration(_ badge: Badge) {
+        let thisId = UUID()
+        celebrationId = thisId
+        celebrateBadge = badge
+        playSound("Glass")
+
+        guard let screen = NSScreen.main else { return }
+        let w: CGFloat = 420
+        let h: CGFloat = 500
+        let x = screen.visibleFrame.midX - w / 2
+        let y = screen.visibleFrame.midY - h / 2
+
+        let panel = NSPanel(
+            contentRect: NSMakeRect(x, y, w, h),
+            styleMask: [.borderless, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        panel.level = .statusBar
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = false
+        panel.ignoresMouseEvents = false
+
+        let dismissAction = { [weak self] in
+            // Only dismiss if this is still the active celebration
+            guard self?.celebrationId == thisId else { return }
+            self?.celebrationWindow?.orderOut(nil)
+            self?.celebrationWindow = nil
+            self?.celebrateBadge = nil
+            self?.celebrationId = nil
+        }
+
+        let view = BadgeCelebrationView(badge: badge, onDismiss: dismissAction)
+
+        let hostingView = NSHostingView(rootView: view)
+        hostingView.frame = NSMakeRect(0, 0, w, h)
+        panel.contentView!.addSubview(hostingView)
+        panel.orderFront(nil)
+
+        celebrationWindow = panel
+    }
+
     @Published var showRestartPrompt = false
     var suppressNextRestartPrompt = false
 
@@ -434,6 +559,12 @@ final class AppState: ObservableObject {
 
         if newConfig.quietHours != old.quietHours || newConfig.workDays != old.workDays {
             checkQuietHours()
+        }
+
+        if newConfig.shortcutEnabled != old.shortcutEnabled ||
+           newConfig.shortcutKeyCode != old.shortcutKeyCode ||
+           newConfig.shortcutModifiers != old.shortcutModifiers {
+            setupShortcutMonitors()
         }
     }
 
@@ -570,6 +701,37 @@ final class AppState: ObservableObject {
         } else if !shouldPause && isInQuietHours {
             isInQuietHours = false
             if phase == .paused && autoQuietPaused { togglePause(); autoQuietPaused = false }
+        }
+    }
+
+    // MARK: - Keyboard Shortcut
+
+    func setupShortcutMonitors() {
+        if let m = localMonitor { NSEvent.removeMonitor(m); localMonitor = nil }
+        guard config.shortcutEnabled else { return }
+
+        localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return event }
+            let targetMods = NSEvent.ModifierFlags(rawValue: self.config.shortcutModifiers)
+                .intersection([.command, .option, .shift, .control])
+            let eventMods = event.modifierFlags.intersection([.command, .option, .shift, .control])
+            guard event.keyCode == self.config.shortcutKeyCode && eventMods == targetMods else { return event }
+            if self.phase == .alerting || self.phase == .waiting {
+                self.handleShortcutAction()
+                return nil  // consume the event
+            }
+            return event
+        }
+    }
+
+    private func handleShortcutAction() {
+        switch phase {
+        case .alerting:
+            confirmBreak()
+        case .waiting:
+            confirmReturn()
+        default:
+            break
         }
     }
 

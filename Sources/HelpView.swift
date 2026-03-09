@@ -72,23 +72,24 @@ struct HelpView: View {
                     .font(.callout)
                     .foregroundStyle(.secondary)
 
+                Text(L.helpBadgeStreak)
+                    .font(.callout.bold())
+                    .foregroundStyle(.secondary)
+
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
                     ForEach(Array(allBadges.enumerated()), id: \.offset) { _, badge in
-                        HStack(spacing: 10) {
-                            Text(badge.icon)
-                                .font(.system(size: 24))
-                                .frame(width: 36)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(badge.name)
-                                    .font(.system(size: 13, weight: .semibold))
-                                Text(badge.desc)
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(.tertiary)
-                            }
-                            Spacer()
-                        }
-                        .padding(10)
-                        .background(.quaternary.opacity(0.2), in: RoundedRectangle(cornerRadius: 8))
+                        badgeCard(badge)
+                    }
+                }
+
+                Text(L.helpBadgeTotal)
+                    .font(.callout.bold())
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 8)
+
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                    ForEach(Array(allTotalBadges.enumerated()), id: \.offset) { _, badge in
+                        badgeCard(badge)
                     }
                 }
 
@@ -209,6 +210,24 @@ struct HelpView: View {
                     .foregroundStyle(.secondary)
             }
         }
+    }
+
+    private func badgeCard(_ badge: Badge) -> some View {
+        HStack(spacing: 10) {
+            Text(badge.icon)
+                .font(.system(size: 24))
+                .frame(width: 36)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(badge.name)
+                    .font(.system(size: 13, weight: .semibold))
+                Text(badge.desc)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+            }
+            Spacer()
+        }
+        .padding(10)
+        .background(.quaternary.opacity(0.2), in: RoundedRectangle(cornerRadius: 8))
     }
 
     private func tipItem(_ text: String) -> some View {

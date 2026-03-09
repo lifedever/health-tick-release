@@ -232,6 +232,7 @@ struct SystemTab: View {
 struct AppTab: View {
     @EnvironmentObject var state: AppState
     @State private var showQuietHelp = false
+    @State private var showShortcutHelp = false
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
@@ -291,6 +292,8 @@ struct AppTab: View {
                         isOn: $state.config.breakDetectSound,
                         sound: $state.config.breakDetectSoundName
                     )
+                    Divider().padding(.leading, 44)
+                    shortcutRow
                 }
                 .padding(.vertical, 4)
                 .background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 10))
@@ -418,6 +421,45 @@ struct AppTab: View {
         } message: {
             Text(L.durationChangedMsg)
         }
+    }
+
+    @ViewBuilder
+    private var shortcutRow: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "keyboard.fill")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .frame(width: 20)
+            Text(L.shortcutLabel)
+                .font(.callout)
+            Button {
+                showShortcutHelp.toggle()
+            } label: {
+                Image(systemName: "questionmark.circle")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.tertiary)
+            }
+            .buttonStyle(.borderless)
+            .popover(isPresented: $showShortcutHelp) {
+                Text(L.shortcutHint)
+                    .font(.callout)
+                    .padding(12)
+                    .frame(width: 260)
+            }
+            Spacer()
+            if state.config.shortcutEnabled {
+                ShortcutRecorderView(
+                    keyCode: $state.config.shortcutKeyCode,
+                    modifiers: $state.config.shortcutModifiers
+                )
+            }
+            Toggle("", isOn: $state.config.shortcutEnabled)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .tint(.green)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 6)
     }
 
     private func sliderRow(icon: String, label: String, value: Binding<Double>, range: ClosedRange<Double>, unit: String, color: Color) -> some View {
@@ -691,6 +733,66 @@ struct AboutTab: View {
             .padding(.bottom, 16)
         }
         .frame(maxWidth: .infinity)
+    }
+}
+
+// MARK: - Shortcut Recorder
+
+struct ShortcutRecorderView: View {
+    @Binding var keyCode: UInt16
+    @Binding var modifiers: UInt
+    @State private var isRecording = false
+    @State private var monitor: Any?
+
+    var body: some View {
+        Button {
+            if isRecording {
+                stopRecording()
+            } else {
+                isRecording = true
+                startRecording()
+            }
+        } label: {
+            if isRecording {
+                Text(L.shortcutRecording)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.orange)
+            } else {
+                let config = AppConfig(shortcutKeyCode: keyCode, shortcutModifiers: modifiers)
+                HStack(spacing: 4) {
+                    Text(config.shortcutDisplay)
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(.quaternary, in: RoundedRectangle(cornerRadius: 5))
+                    Text(L.shortcutClickToChange)
+                        .font(.system(size: 10))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+        }
+        .buttonStyle(.borderless)
+        .handCursor()
+    }
+
+    private func startRecording() {
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            // Escape to cancel
+            if event.keyCode == 53 {
+                stopRecording()
+                return nil
+            }
+            let mods = event.modifierFlags.intersection([.command, .option, .shift, .control])
+            keyCode = event.keyCode
+            modifiers = mods.rawValue
+            stopRecording()
+            return nil
+        }
+    }
+
+    private func stopRecording() {
+        if let m = monitor { NSEvent.removeMonitor(m); monitor = nil }
+        isRecording = false
     }
 }
 
