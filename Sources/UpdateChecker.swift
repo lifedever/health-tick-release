@@ -32,17 +32,20 @@ final class UpdateChecker: ObservableObject {
         isChecking = true
         checkError = nil
 
-        let urlStr = "https://api.github.com/repos/\(githubRepo)/releases/latest"
+        let urlStr = "https://github.com/\(githubRepo)/releases/latest"
         guard let url = URL(string: urlStr) else {
             isChecking = false
             return
         }
 
         var request = URLRequest(url: url)
-        request.setValue("application/vnd.github.v3+json", forHTTPHeaderField: "Accept")
         request.timeoutInterval = 10
 
-        URLSession.shared.dataTask(with: request) { [weak self] data, _, error in
+        // Use a session that doesn't follow redirects to extract version from redirect URL
+        let delegate = RedirectBlocker()
+        let session = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
+
+        session.dataTask(with: request) { [weak self] _, response, error in
             guard let self else { return }
             Task { @MainActor [weak self] in
                 guard let self else { return }
@@ -52,40 +55,20 @@ final class UpdateChecker: ObservableObject {
                     if !silent { self.checkError = L.networkError(error.localizedDescription) }
                     return
                 }
-                guard let data,
-                      let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                      let tagName = json["tag_name"] as? String else {
+
+                guard let httpResponse = response as? HTTPURLResponse,
+                      let location = httpResponse.value(forHTTPHeaderField: "Location"),
+                      let tagRange = location.range(of: "/tag/") else {
                     if !silent { self.showNoUpdateAlert() }
                     return
                 }
 
-                let remote = tagName.trimmingCharacters(in: CharacterSet(charactersIn: "vV"))
+                let tag = String(location[tagRange.upperBound...])
+                let remote = tag.trimmingCharacters(in: CharacterSet(charactersIn: "vV"))
                 self.latestVersion = remote
 
                 let platformKey = isAppleSilicon ? "Apple-Silicon" : "Intel"
-                if let assets = json["assets"] as? [[String: Any]] {
-                    for asset in assets {
-                        if let name = asset["name"] as? String,
-                           let url = asset["browser_download_url"] as? String,
-                           name.hasSuffix(".dmg") && name.contains(platformKey) {
-                            self.downloadURL = url
-                            break
-                        }
-                    }
-                    if self.downloadURL == nil {
-                        for asset in assets {
-                            if let name = asset["name"] as? String,
-                               let url = asset["browser_download_url"] as? String,
-                               name.hasSuffix(".dmg") {
-                                self.downloadURL = url
-                                break
-                            }
-                        }
-                    }
-                }
-                if self.downloadURL == nil, let htmlURL = json["html_url"] as? String {
-                    self.downloadURL = htmlURL
-                }
+                self.downloadURL = "https://github.com/\(githubRepo)/releases/download/\(tag)/HealthTick-\(tag)-\(platformKey).dmg"
 
                 if self.compareVersions(remote, isNewerThan: appVersion) {
                     self.hasUpdate = true
@@ -193,6 +176,15 @@ final class UpdateChecker: ObservableObject {
             if rv < lv { return false }
         }
         return false
+    }
+}
+
+// MARK: - Redirect Blocker
+
+private class RedirectBlocker: NSObject, URLSessionTaskDelegate {
+    func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
+        // Block redirect so we can read the Location header
+        completionHandler(nil)
     }
 }
 
