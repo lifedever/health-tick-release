@@ -82,21 +82,6 @@ brew upgrade --cask health-tick
 
 ---
 
-## ☕ 赞助支持
-
-HealthTick 完全免费使用。如果它对你的健康有帮助，欢迎赞助支持开发者继续维护和改进！
-
-<p align="center">
-  <img src="wechat-pay.jpg" width="260" alt="微信支付">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
-  <img src="alipay.png" width="260" alt="支付宝">
-</p>
-
-<p align="center">
-  <strong>感谢每一位支持者 ❤️</strong>
-</p>
-
----
-
 ## 💬 反馈
 
 遇到问题或有建议？欢迎在 [Issues](https://github.com/lifedever/health-tick-release/issues) 中反馈。
