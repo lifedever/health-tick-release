@@ -59,6 +59,32 @@ struct QuietHourPeriod: Codable, Equatable {
             return now >= s || now < e
         }
     }
+
+    /// Returns the Date when this period ends, given a reference date
+    func endDate(from date: Date) -> Date? {
+        let cal = Calendar.current
+        let endParts = end.split(separator: ":").compactMap { Int($0) }
+        guard endParts.count == 2 else { return nil }
+        var endDate = cal.date(bySettingHour: endParts[0], minute: endParts[1], second: 0, of: date)!
+        // If end is before now (crosses midnight), it's tomorrow
+        if endDate <= date {
+            endDate = cal.date(byAdding: .day, value: 1, to: endDate)!
+        }
+        return endDate
+    }
+
+    /// Returns the Date when this period starts next, given a reference date (for work hours: when work resumes)
+    func startDate(from date: Date) -> Date? {
+        let cal = Calendar.current
+        let startParts = start.split(separator: ":").compactMap { Int($0) }
+        guard startParts.count == 2 else { return nil }
+        var startDate = cal.date(bySettingHour: startParts[0], minute: startParts[1], second: 0, of: date)!
+        // If start is before now, it's tomorrow
+        if startDate <= date {
+            startDate = cal.date(byAdding: .day, value: 1, to: startDate)!
+        }
+        return startDate
+    }
 }
 
 struct BreakActivity {
@@ -214,6 +240,8 @@ final class AppState: ObservableObject {
     @Published var currentBreakActivity: BreakActivity?
     @Published var currentReminder: String?
     @Published var celebrateBadge: Badge?
+    @Published var todaySkipCount: Int = 0
+    @Published var quietRemainingSeconds: Int = 0
 
     private var currentSessionId: Int64?
     private var currentSessionWorkConfig: Int = 0  // work_minutes at session creation
@@ -224,6 +252,7 @@ final class AppState: ObservableObject {
     private var timer: Timer?
     private var alertRepeatTimer: Timer?
     private var quietCheckTimer: Timer?
+    private var quietCountdownTimer: Timer?
     private var autoQuietPaused: Bool = false
     private var lastActiveDate: String = Database.todayString()
     private var lastWorkMinutesRefresh: Date = .distantPast
@@ -319,6 +348,11 @@ final class AppState: ObservableObject {
             pausedRemaining = secs
             pausedPhase = .working
             remainingSeconds = secs
+        case "alerting":
+            // Was in alerting/breaking/waiting — restore to alerting
+            currentReminder = config.reminders.randomElement() ?? L.defaultBreakReminder
+            currentSessionId = db.startSession(workMinutes: config.workMinutes, breakMinutes: config.breakMinutes, dailyGoal: config.dailyGoal)
+            onWorkDone()
         default:
             startWork()
         }
@@ -330,8 +364,8 @@ final class AppState: ObservableObject {
             db.saveTimerState(phase: "working", targetTime: nil, pausedRemaining: remainingSeconds)
         case .paused:
             db.saveTimerState(phase: "paused", targetTime: nil, pausedRemaining: pausedRemaining)
-        default:
-            db.clearTimerState()
+        case .alerting, .breaking, .waiting:
+            db.saveTimerState(phase: "alerting", targetTime: nil, pausedRemaining: 0)
         }
         db.saveFlag("overtime_active", value: overtimeActive)
     }
@@ -388,6 +422,7 @@ final class AppState: ObservableObject {
         if config.breakConfirm {
             phase = .alerting
             remainingSeconds = 0
+            saveTimerState()
             overlayManager.pinForAlert()
         } else {
             startBreak()
@@ -528,6 +563,7 @@ final class AppState: ObservableObject {
         totalCount = db.totalCount()
         todayWorkMinutes = db.todayWorkMinutes() + currentSessionWorkMinutes
         weekWorkData = db.recent7DaysWorkMinutes()
+        todaySkipCount = db.todaySkipCount()
         // Add current session's contribution to today's entry in week data
         if currentSessionWorkMinutes > 0 {
             let today = Database.todayString()
@@ -761,6 +797,7 @@ final class AppState: ObservableObject {
         if let sid = currentSessionId {
             db.endSessionBreak(sessionId: sid, actualSeconds: actualSeconds, skipped: true)
         }
+        todaySkipCount = db.todaySkipCount()
 
         startWork()
     }
@@ -807,16 +844,10 @@ final class AppState: ObservableObject {
         db.saveFlag("overtime_active", value: true)
         if isInQuietHours {
             isInQuietHours = false
-            if phase == .paused && autoQuietPaused {
-                autoQuietPaused = false
-                goalReachedPaused = false
-                startWork()
-            } else if phase == .paused && goalReachedPaused {
-                goalReachedPaused = false
-                startWork()
-            } else if phase == .paused {
-                togglePause()
-            }
+            stopQuietCountdown()
+            autoQuietPaused = false
+            goalReachedPaused = false
+            startWork()
         }
     }
 
@@ -845,11 +876,95 @@ final class AppState: ObservableObject {
         if shouldPause && !isInQuietHours {
             isInQuietHours = true
             if phase == .breaking { forceEndBreak() }
-            if phase == .working { togglePause(); autoQuietPaused = true }
+            if phase == .working {
+                timer?.invalidate()
+                if let sid = currentSessionId {
+                    db.endWork(sessionId: sid)
+                    currentSessionId = nil
+                }
+                phase = .paused
+                autoQuietPaused = true
+            }
+            startQuietCountdown()
         } else if !shouldPause && isInQuietHours {
             isInQuietHours = false
-            if phase == .paused && autoQuietPaused { togglePause(); autoQuietPaused = false }
+            stopQuietCountdown()
+            autoQuietPaused = false
+            goalReachedPaused = false
+            startWork()
         }
+
+        if isInQuietHours {
+            updateQuietRemaining()
+        }
+    }
+
+    // MARK: - Quiet Countdown
+
+    private func startQuietCountdown() {
+        quietCountdownTimer?.invalidate()
+        updateQuietRemaining()
+        quietCountdownTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor [weak self] in
+                guard let self, self.isInQuietHours else { return }
+                self.updateQuietRemaining()
+                if self.quietRemainingSeconds <= 0 {
+                    self.checkQuietHours()
+                }
+            }
+        }
+    }
+
+    private func stopQuietCountdown() {
+        quietCountdownTimer?.invalidate()
+        quietCountdownTimer = nil
+        quietRemainingSeconds = 0
+    }
+
+    private func updateQuietRemaining() {
+        let cal = Calendar.current
+        let now = Date()
+        var endDates: [Date] = []
+
+        // Check quiet hour periods
+        for period in config.quietHours where period.isActive(at: now) {
+            if let endDate = period.endDate(from: now) {
+                endDates.append(endDate)
+            }
+        }
+
+        // Check work hours (outside work hours = quiet)
+        if config.workHoursEnabled && !overtimeActive {
+            let workPeriod = QuietHourPeriod(start: config.workStartTime, end: config.workEndTime)
+            if !workPeriod.isActive(at: now), let endDate = workPeriod.startDate(from: now) {
+                endDates.append(endDate)
+            }
+        }
+
+        // Check non-work day — ends at midnight
+        let weekday = cal.component(.weekday, from: now)
+        if !config.workDays.contains(weekday) {
+            if let tomorrow = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: now)) {
+                endDates.append(tomorrow)
+            }
+        }
+
+        if let nearest = endDates.min() {
+            quietRemainingSeconds = max(0, Int(nearest.timeIntervalSince(now)))
+        } else {
+            quietRemainingSeconds = 0
+        }
+    }
+
+    var formattedQuietTime: String {
+        let h = quietRemainingSeconds / 3600
+        let m = (quietRemainingSeconds % 3600) / 60
+        let s = quietRemainingSeconds % 60
+        if h > 0 {
+            return String(format: "%d:%02d:%02d", h, m, s)
+        }
+        return String(format: "%02d:%02d", m, s)
     }
 
     // MARK: - Keyboard Shortcut

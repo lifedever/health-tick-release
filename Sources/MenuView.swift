@@ -26,6 +26,21 @@ struct MenuView: View {
                 .background(.green.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
             }
 
+            // Skip warning indicator
+            if state.todaySkipCount >= 3 {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.orange)
+                    Text(L.skipWarningMenu)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.orange)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
+            }
+
             // Quiet hours indicator
             if state.isInQuietHours {
                 HStack(spacing: 6) {
@@ -135,17 +150,23 @@ struct MenuView: View {
                 }
 
                 VStack(spacing: 2) {
-                    HStack(spacing: 2) {
-                        Image(systemName: "flame.fill")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.orange)
-                        Text("\(state.currentStreak)")
-                            .font(.title3.bold().monospacedDigit())
-                            .foregroundStyle(.orange)
-                    }
+                    Text("\(state.currentStreak)")
+                        .font(.title3.bold().monospacedDigit())
+                        .foregroundStyle(.orange)
                     Text(L.streak)
                         .font(.system(size: 9))
                         .foregroundStyle(.primary.opacity(0.5))
+                }
+
+                if state.todaySkipCount > 0 {
+                    VStack(spacing: 2) {
+                        Text("\(state.todaySkipCount)")
+                            .font(.title3.bold().monospacedDigit())
+                            .foregroundStyle(state.todaySkipCount >= 3 ? .red : .red.opacity(0.6))
+                        Text(L.todaySkipped)
+                            .font(.system(size: 9))
+                            .foregroundStyle(.primary.opacity(0.5))
+                    }
                 }
             }
 
@@ -268,6 +289,13 @@ struct MenuView: View {
     // MARK: - Helpers
 
     private var timerProgress: Double {
+        if state.isInQuietHours {
+            // Show quiet hours countdown progress (draining down)
+            guard state.quietRemainingSeconds > 0 else { return 0 }
+            // Cap at 1 hour for visual progress; longer periods show partial ring
+            let maxDisplay = 3600.0
+            return min(1.0, Double(state.quietRemainingSeconds) / maxDisplay)
+        }
         let total: Int
         if state.phase == .working || (state.phase == .paused && state.remainingSeconds > 0) {
             total = state.config.workMinutes * 60
@@ -279,6 +307,7 @@ struct MenuView: View {
     }
 
     private var phaseColor: Color {
+        if state.isInQuietHours { return .orange }
         switch state.phase {
         case .working: return .green
         case .breaking: return .orange

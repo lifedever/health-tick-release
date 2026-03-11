@@ -378,6 +378,19 @@ final class Database {
         exec("UPDATE sessions SET break_end = '\(now)', break_actual_seconds = \(actualStr), skipped = \(skipped ? 1 : 0) WHERE id = \(sessionId)")
     }
 
+    // MARK: - Skip Count
+
+    func todaySkipCount() -> Int {
+        let date = Self.todayString()
+        var stmt: OpaquePointer?
+        defer { sqlite3_finalize(stmt) }
+        if sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM sessions WHERE date = '\(date)' AND skipped = 1", -1, &stmt, nil) == SQLITE_OK,
+           sqlite3_step(stmt) == SQLITE_ROW {
+            return Int(sqlite3_column_int(stmt, 0))
+        }
+        return 0
+    }
+
     // MARK: - Work Minutes
 
     func todayWorkMinutes() -> Int {

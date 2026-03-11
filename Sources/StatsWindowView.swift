@@ -78,6 +78,9 @@ struct StatsWindowView: View {
                         summaryRow(icon: "sun.max.fill", label: L.activeDays, value: "\(active)", color: .orange)
                         summaryRow(icon: "divide", label: L.avgDaily, value: String(format: "%.1f", avgDaily), color: .teal)
                         summaryRow(icon: "trophy.fill", label: L.bestDay, value: bestDate.isEmpty ? "-" : "\(bestCount)\(longDate(bestDate))", color: .mint)
+                        if state.todaySkipCount > 0 {
+                            summaryRow(icon: "exclamationmark.triangle.fill", label: L.todaySkipped, value: "\(state.todaySkipCount)", color: .orange)
+                        }
 
                         Spacer(minLength: 0)
                     }

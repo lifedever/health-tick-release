@@ -458,6 +458,13 @@ struct L {
     static var outsideWorkHours: String { isZh ? "非工作时间" : "Outside Work Hours" }
     static var dailyGoalReached: String { isZh ? "今日目标已完成！" : "Daily goal reached!" }
 
+    // MARK: - Skip Detection
+    static var skipWarningMenu: String { isZh ? "今日多次跳过休息，注意健康" : "Breaks skipped today, take care" }
+    static func skipWarningBreak(_ count: Int) -> String {
+        isZh ? "今天已跳过 \(count) 次休息，身体需要你的关注" : "You've skipped \(count) breaks today. Your body needs attention"
+    }
+    static var todaySkipped: String { isZh ? "跳过" : "Skip" }
+
     // MARK: - Break Activities
     static var breakActivity: String { isZh ? "休息建议" : "Break Suggestion" }
 
