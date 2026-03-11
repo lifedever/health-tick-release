@@ -349,10 +349,17 @@ final class AppState: ObservableObject {
             pausedPhase = .working
             remainingSeconds = secs
         case "alerting":
-            // Was in alerting/breaking/waiting — restore to alerting
+            // Was in alerting/breaking/waiting — restore to alerting without sound
             currentReminder = config.reminders.randomElement() ?? L.defaultBreakReminder
-            currentSessionId = db.startSession(workMinutes: config.workMinutes, breakMinutes: config.breakMinutes, dailyGoal: config.dailyGoal)
-            onWorkDone()
+            if config.breakConfirm {
+                phase = .alerting
+                remainingSeconds = 0
+                saveTimerState()
+            } else {
+                // No confirm needed — go straight to break
+                currentSessionId = db.startSession(workMinutes: config.workMinutes, breakMinutes: config.breakMinutes, dailyGoal: config.dailyGoal)
+                startBreak()
+            }
         default:
             startWork()
         }
@@ -500,9 +507,12 @@ final class AppState: ObservableObject {
         if todayDone >= config.dailyGoal {
             // Daily goal reached, auto-pause instead of starting new work
             phase = .paused
+            pausedRemaining = 0
+            pausedPhase = nil
             remainingSeconds = 0
             goalReachedPaused = true
             timer?.invalidate()
+            saveTimerState()
         } else {
             startWork()
         }
@@ -875,7 +885,39 @@ final class AppState: ObservableObject {
 
         if shouldPause && !isInQuietHours {
             isInQuietHours = true
-            if phase == .breaking { forceEndBreak() }
+            if phase == .breaking {
+                // End break cleanly without creating a new session
+                timer?.invalidate()
+                alertRepeatTimer?.invalidate()
+                alertRepeatTimer = nil
+                breakWarning = ""
+                overlayManager.hide()
+                let actualSeconds: Int?
+                if let start = breakStartDate {
+                    actualSeconds = Int(Date().timeIntervalSince(start))
+                } else {
+                    actualSeconds = nil
+                }
+                if let sid = currentSessionId {
+                    db.endSessionBreak(sessionId: sid, actualSeconds: actualSeconds, skipped: false)
+                    currentSessionId = nil
+                }
+                phase = .paused
+                autoQuietPaused = true
+            }
+            if phase == .alerting {
+                alertRepeatTimer?.invalidate()
+                alertRepeatTimer = nil
+                overlayManager.hideAll()
+                phase = .paused
+                autoQuietPaused = true
+            }
+            if phase == .waiting {
+                overlayManager.hideAll()
+                pendingBadge = nil
+                phase = .paused
+                autoQuietPaused = true
+            }
             if phase == .working {
                 timer?.invalidate()
                 if let sid = currentSessionId {
