@@ -39,13 +39,14 @@ struct BreakCardView: View {
         Image(systemName: "bell.badge.fill")
             .font(.system(size: fullscreen ? 64 : 44))
             .foregroundStyle(.orange)
-            .padding(.top, fullscreen ? 16 : 8)
+            .padding(.top, fullscreen ? 16 : 16)
 
         if let reminder = state.currentReminder {
             Text(reminder)
                 .font(fullscreen ? .title3.bold() : .callout.bold())
                 .foregroundStyle(fullscreen ? .white.opacity(0.85) : .primary.opacity(0.8))
                 .multilineTextAlignment(.center)
+                .padding(.bottom, fullscreen ? 0 : 4)
         }
 
         Button {
@@ -65,6 +66,7 @@ struct BreakCardView: View {
             Text(L.shortcutQuickConfirm(state.config.shortcutDisplay))
                 .font(.system(size: fullscreen ? 12 : 10))
                 .foregroundStyle(.secondary.opacity(0.6))
+                .padding(.bottom, fullscreen ? 0 : 8)
         }
     }
 
@@ -106,10 +108,10 @@ struct BreakCardView: View {
             HStack(spacing: fullscreen ? 8 : 6) {
                 Image(systemName: activity.icon)
                     .font(.system(size: fullscreen ? 18 : 14))
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(fullscreen ? .green.opacity(0.85) : .green)
                 Text(activity.text)
                     .font(fullscreen ? .title3 : .callout)
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(fullscreen ? .green.opacity(0.85) : .green)
             }
         }
 
@@ -150,12 +152,13 @@ struct BreakCardView: View {
         Image(systemName: "checkmark.circle.fill")
             .font(.system(size: fullscreen ? 64 : 44))
             .foregroundStyle(.green)
-            .padding(.top, fullscreen ? 16 : 8)
+            .padding(.top, fullscreen ? 16 : 16)
 
         Text(L.breakOverReturnPrompt)
             .font(fullscreen ? .title3 : .callout)
             .foregroundStyle(fullscreen ? .white.opacity(0.7) : .secondary)
             .multilineTextAlignment(.center)
+            .padding(.bottom, fullscreen ? 0 : 4)
 
         Button {
             state.confirmReturn()
@@ -174,6 +177,7 @@ struct BreakCardView: View {
             Text(L.shortcutQuickConfirm(state.config.shortcutDisplay))
                 .font(.system(size: fullscreen ? 12 : 10))
                 .foregroundStyle(.secondary.opacity(0.6))
+                .padding(.bottom, fullscreen ? 0 : 8)
         }
     }
 }
