@@ -374,6 +374,14 @@ final class Database {
         exec("UPDATE sessions SET work_end = work_start WHERE date < '\(date)' AND work_end IS NULL")
     }
 
+    /// Close orphan sessions for today (e.g. app crashed mid-work).
+    /// Uses configured work_minutes as the elapsed estimate, capped by workMinutesForDate logic.
+    func closeTodayOrphanSessions() {
+        let today = Self.todayString()
+        let now = ISO8601DateFormatter().string(from: Date())
+        exec("UPDATE sessions SET work_end = '\(now)' WHERE date = '\(today)' AND work_end IS NULL")
+    }
+
     func startSessionBreak(sessionId: Int64) {
         let now = ISO8601DateFormatter().string(from: Date())
         exec("UPDATE sessions SET break_start = '\(now)' WHERE id = \(sessionId)")

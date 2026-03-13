@@ -297,9 +297,14 @@ final class AppState: ObservableObject {
         }
 
 
-        // Save timer state on app quit
+        // Save timer state and close current session on app quit
         NotificationCenter.default.addObserver(forName: NSApplication.willTerminateNotification, object: nil, queue: .main) { [weak self] _ in
-            self?.saveTimerState()
+            guard let self else { return }
+            if let sid = self.currentSessionId {
+                self.db.endWork(sessionId: sid)
+                self.currentSessionId = nil
+            }
+            self.saveTimerState()
         }
 
         // Detect day change after system wake from sleep
@@ -334,6 +339,9 @@ final class AppState: ObservableObject {
             handleDayChange()
             return
         }
+
+        // Close any orphan sessions from today (e.g. app crashed mid-work)
+        db.closeTodayOrphanSessions()
 
         let saved = db.loadTimerState()
         let secs = saved.pausedRemaining ?? 0
@@ -544,6 +552,12 @@ final class AppState: ObservableObject {
         pausedPhase = nil
         autoQuietPaused = false
 
+        // Close current session so its work time is not lost
+        if let sid = currentSessionId {
+            db.endWork(sessionId: sid)
+            currentSessionId = nil
+        }
+
         isInQuietHours = false
         startWork()
         checkQuietHours()
@@ -697,6 +711,11 @@ final class AppState: ObservableObject {
         alertRepeatTimer?.invalidate()
         overlayManager.hide()
         pausedPhase = nil
+        // Close current session so its work time is not lost
+        if let sid = currentSessionId {
+            db.endWork(sessionId: sid)
+            currentSessionId = nil
+        }
         startWork()
         refreshStats()
     }
@@ -706,6 +725,11 @@ final class AppState: ObservableObject {
         alertRepeatTimer?.invalidate()
         overlayManager.hide()
         pausedPhase = nil
+        // Close current session so its work time is not lost
+        if let sid = currentSessionId {
+            db.endWork(sessionId: sid)
+            currentSessionId = nil
+        }
         startWork()
         checkQuietHours()
     }
