@@ -185,8 +185,7 @@ struct MenuView: View {
                 Spacer().frame(width: 6)
 
                 Button {
-                    let data = ShareCardData(from: state)
-                    ShareManager.showPreview(data: data)
+                    ShareManager.showPreview(state: state)
                     dismissMenuPanel()
                 } label: {
                     Image(systemName: "square.and.arrow.up")

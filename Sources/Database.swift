@@ -412,7 +412,33 @@ final class Database {
         workMinutesForDate(Self.todayString())
     }
 
-    private func workMinutesForDate(_ date: String) -> Int {
+    func countForDate(_ date: String) -> Int {
+        queryInt("SELECT COUNT(*) FROM records WHERE date = '\(date)'")
+    }
+
+    func recent7DaysCountsEndingOn(_ endDate: Date) -> [(String, Int)] {
+        let fmt = Self.dateFmt()
+        var map: [String: Int] = [:]
+        var stmt: OpaquePointer?
+        let start = fmt.string(from: Calendar.current.date(byAdding: .day, value: -6, to: endDate)!)
+        let end = fmt.string(from: endDate)
+        let sql = "SELECT date, COUNT(*) FROM records WHERE date >= '\(start)' AND date <= '\(end)' GROUP BY date"
+        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                let d = String(cString: sqlite3_column_text(stmt, 0))
+                map[d] = Int(sqlite3_column_int(stmt, 1))
+            }
+        }
+        sqlite3_finalize(stmt)
+        var result: [(String, Int)] = []
+        for i in stride(from: 6, through: 0, by: -1) {
+            let d = fmt.string(from: Calendar.current.date(byAdding: .day, value: -i, to: endDate)!)
+            result.append((d, map[d] ?? 0))
+        }
+        return result
+    }
+
+    func workMinutesForDate(_ date: String) -> Int {
         var stmt: OpaquePointer?
         // Only count completed sessions (work_end IS NOT NULL)
         let sql = "SELECT work_start, work_end, work_minutes FROM sessions WHERE date = '\(date)' AND work_end IS NOT NULL"

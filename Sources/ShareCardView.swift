@@ -27,6 +27,26 @@ struct ShareCardData {
         self.nextBadge = state.nextBadge
         self.dateString = Database.todayString()
     }
+
+    /// Init for a specific date, loading data directly from DB
+    @MainActor
+    init(forDate dateString: String, goal: Int, state: AppState) {
+        let db = Database.shared
+        let fmt = Database.dateFmt()
+        let date = fmt.date(from: dateString) ?? Date()
+
+        self.dateString = dateString
+        self.dailyGoal = goal
+        self.todayDone = db.countForDate(dateString)
+        self.todayWorkMinutes = db.workMinutesForDate(dateString)
+        self.weekData = db.recent7DaysCountsEndingOn(date)
+        // These are global stats, not date-specific
+        self.currentStreak = state.currentStreak
+        self.maxStreak = state.maxStreak
+        self.totalCount = state.totalCount
+        self.earnedBadge = state.earnedBadge
+        self.nextBadge = state.nextBadge
+    }
 }
 
 // MARK: - Share Card View
