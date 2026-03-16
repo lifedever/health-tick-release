@@ -262,6 +262,7 @@ final class AppState {
     var overlayManager = BreakOverlayManager()
 
     private var autoSaveTimer: Timer?
+    private var restartPromptTimer: Timer?
     private var lastSavedConfig: AppConfig?
     private var localMonitor: Any?
 
@@ -696,10 +697,17 @@ final class AppState {
 
         if suppressNextRestartPrompt {
             suppressNextRestartPrompt = false
+            restartPromptTimer?.invalidate()
         } else if !isInQuietHours &&
            ((newConfig.workMinutes != old.workMinutes && (phase == .working || phase == .paused)) ||
             (newConfig.breakMinutes != old.breakMinutes && phase == .breaking)) {
-            showRestartPrompt = true
+            // Delay prompt so rapid edits (typing, stepper clicks) don't spam it
+            restartPromptTimer?.invalidate()
+            restartPromptTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: false) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.showRestartPrompt = true
+                }
+            }
         }
 
         if newConfig.quietHours != old.quietHours || newConfig.workDays != old.workDays ||
