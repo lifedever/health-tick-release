@@ -3,6 +3,7 @@ import SwiftUI
 @main
 struct HealthTickApp: App {
     @State private var state = AppState()
+    @StateObject private var updater = UpdateChecker.shared
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @Environment(\.openWindow) private var openWindow
 
@@ -19,6 +20,12 @@ struct HealthTickApp: App {
         .onChange(of: state.showOnboarding) { _, show in
             if show {
                 openWindow(id: "onboarding")
+                bringToFront()
+            }
+        }
+        .onChange(of: updater.showUpdateDialog) { _, show in
+            if show {
+                openWindow(id: "update")
                 bringToFront()
             }
         }
@@ -90,6 +97,11 @@ struct HealthTickApp: App {
                 .environment(state)
         }
         .defaultSize(width: 500, height: 450)
+        .windowResizability(.contentSize)
+
+        Window(L.newVersionFound, id: "update") {
+            UpdateDialogView(updater: UpdateChecker.shared)
+        }
         .windowResizability(.contentSize)
     }
 

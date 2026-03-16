@@ -1,19 +1,45 @@
 import SwiftUI
 import ServiceManagement
 
+private enum SettingsTab: Hashable {
+    case system, app, breakTab, reminders, about
+}
+
 struct SettingsView: View {
+    @State private var selectedTab: SettingsTab = .system
+
     var body: some View {
-        TabView {
-            SystemTab()
-                .tabItem { Label(L.tabSystem, systemImage: "gearshape") }
-            AppTab()
-                .tabItem { Label(L.tabApp, systemImage: "calendar.badge.clock") }
-            BreakTab()
-                .tabItem { Label(L.tabBreak, systemImage: "cup.and.saucer.fill") }
-            ReminderTab()
-                .tabItem { Label(L.tabReminders, systemImage: "text.bubble") }
-            AboutTab()
-                .tabItem { Label(L.tabAbout, systemImage: "info.circle") }
+        TabView(selection: $selectedTab) {
+            // Lazy: only build the selected tab's heavy content
+            Group {
+                if selectedTab == .system { SystemTab() } else { Color.clear }
+            }
+            .tag(SettingsTab.system)
+            .tabItem { Label(L.tabSystem, systemImage: "gearshape") }
+
+            Group {
+                if selectedTab == .app { AppTab() } else { Color.clear }
+            }
+            .tag(SettingsTab.app)
+            .tabItem { Label(L.tabApp, systemImage: "calendar.badge.clock") }
+
+            Group {
+                if selectedTab == .breakTab { BreakTab() } else { Color.clear }
+            }
+            .tag(SettingsTab.breakTab)
+            .tabItem { Label(L.tabBreak, systemImage: "cup.and.saucer.fill") }
+
+            Group {
+                if selectedTab == .reminders { ReminderTab() } else { Color.clear }
+            }
+            .tag(SettingsTab.reminders)
+            .tabItem { Label(L.tabReminders, systemImage: "text.bubble") }
+
+            Group {
+                if selectedTab == .about { AboutTab() } else { Color.clear }
+            }
+            .tag(SettingsTab.about)
+            .tabItem { Label(L.tabAbout, systemImage: "info.circle") }
         }
         .frame(width: 520)
         .fixedSize(horizontal: false, vertical: true)
@@ -963,6 +989,10 @@ struct ShortcutRecorderView: View {
         }
         .buttonStyle(.borderless)
         .handCursor()
+        .onDisappear {
+            // Prevent NSEvent monitor leak if view is destroyed while recording
+            stopRecording()
+        }
     }
 
     private func startRecording() {

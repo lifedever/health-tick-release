@@ -243,31 +243,20 @@ struct L {
 
     // MARK: - Update Checker
     static var newVersionFound: String { isZh ? "发现新版本" : "New Version Available" }
-    static func updateInfo(version: String, currentVersion: String, arch: String) -> String {
-        if isZh {
-            return "HealthTick v\(version) 已发布（当前 v\(currentVersion)）。\n将为你下载 \(arch) 版本到「下载」文件夹。"
-        } else {
-            return "HealthTick v\(version) is available (current v\(currentVersion)).\nThe \(arch) version will be downloaded to your Downloads folder."
-        }
+    static func updateVersionInfo(_ remote: String, _ current: String) -> String {
+        isZh ? "v\(remote) 已发布（当前 v\(current)）" : "v\(remote) is available (current v\(current))"
     }
-    static var downloadNow: String { isZh ? "立即下载" : "Download Now" }
-    static var downloadComplete: String { isZh ? "下载完成" : "Download Complete" }
-    static var downloadCompleteMsg: String {
-        if isZh {
-            return "已保存到「下载」文件夹。\n点击「安装并退出」将打开 DMG 并退出当前应用，方便你拖入替换。"
-        } else {
-            return "Saved to your Downloads folder.\nClick \"Install & Quit\" to open the DMG and quit the app for replacement."
-        }
-    }
-    static var installAndQuit: String { isZh ? "安装并退出" : "Install & Quit" }
-    static var installLater: String { isZh ? "稍后安装" : "Install Later" }
-    static func networkError(_ msg: String) -> String { isZh ? "网络错误: \(msg)" : "Network error: \(msg)" }
-    static func alreadyLatest(_ ver: String) -> String { isZh ? "已是最新版本 v\(ver)" : "Already up to date v\(ver)" }
+    static var updateInstall: String { isZh ? "立即更新" : "Install Update" }
+    static var updateSkip: String { isZh ? "跳过此版本" : "Skip This Version" }
+    static var updateRemindLater: String { isZh ? "稍后提醒" : "Remind Me Later" }
+    static var updateDownloading: String { isZh ? "正在下载更新..." : "Downloading update..." }
+    static var updateReady: String { isZh ? "下载完成，准备安装" : "Ready to install" }
+    static var updateInstallRestart: String { isZh ? "安装并重启" : "Install & Restart" }
+    static var updateCancel: String { isZh ? "取消" : "Cancel" }
     static var noUpdateTitle: String { isZh ? "暂无更新" : "No Update Available" }
     static func noUpdateMsg(_ ver: String) -> String { isZh ? "当前版本 v\(ver) 已是最新。" : "Current version v\(ver) is already up to date." }
-    static func currentIsLatest(_ ver: String) -> String { isZh ? "当前已是最新版本 v\(ver)" : "Already on the latest version v\(ver)" }
+    static func networkError(_ msg: String) -> String { isZh ? "网络错误: \(msg)" : "Network error: \(msg)" }
     static func downloadFailed(_ msg: String) -> String { isZh ? "下载失败: \(msg)" : "Download failed: \(msg)" }
-    static func saveFailed(_ msg: String) -> String { isZh ? "保存失败: \(msg)" : "Save failed: \(msg)" }
 
     // MARK: - Menu Bar Commands
     static var checkForUpdates: String { isZh ? "检查更新..." : "Check for Updates..." }
