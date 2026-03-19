@@ -13,8 +13,8 @@
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.4.4</string>
+    <string>1.4.5</string>
     <key>CFBundleVersion</key>
-    <string>49</string>
+    <string>50</string>
 </dict>
 </plist>

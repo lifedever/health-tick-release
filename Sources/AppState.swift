@@ -239,7 +239,10 @@ final class AppState {
     var weekWorkData: [(String, Int)] = []
     var isInQuietHours: Bool = false
 
-    var overtimeActive: Bool = false
+    /// Which quiet-hour reasons the user has chosen to skip (via "continue working").
+    /// When a new reason appears that isn't in this set, quiet hours will still trigger.
+    private var skippedQuietReasons: Set<String> = []
+    var overtimeActive: Bool { !skippedQuietReasons.isEmpty }
     var goalAutoStopped: Bool = false
     var showOnboarding: Bool = false
     var currentBreakActivity: BreakActivity?
@@ -334,7 +337,6 @@ final class AppState {
     // MARK: - Timer State Persistence
 
     private func restoreTimerState() {
-        overtimeActive = db.loadFlag("overtime_active")
         let savedDate = db.timerSaveDate()
         let today = Database.todayString()
 
@@ -390,7 +392,6 @@ final class AppState {
         case .alerting, .breaking, .waiting:
             db.saveTimerState(phase: "alerting", targetTime: nil, pausedRemaining: 0)
         }
-        db.saveFlag("overtime_active", value: overtimeActive)
     }
 
     // MARK: - Timer
@@ -894,8 +895,7 @@ final class AppState {
 
         // 6. Reset overtime, quiet hours, goal auto-stop
         goalAutoStopped = false
-        overtimeActive = false
-        db.saveFlag("overtime_active", value: false)
+        skippedQuietReasons.removeAll()
         isInQuietHours = false
         stopQuietCountdown()
 
@@ -933,39 +933,50 @@ final class AppState {
         startWork()
     }
 
+    /// Compute a set of string identifiers for all currently active quiet reasons.
+    private func currentActiveQuietReasons() -> Set<String> {
+        let cal = Calendar.current
+        let now = Date()
+        let weekday = cal.component(.weekday, from: now)
+        var reasons: Set<String> = []
+
+        if !config.workDays.contains(weekday) {
+            reasons.insert("non_work_day")
+        }
+        for period in config.quietHours where period.isActive(at: now) {
+            reasons.insert("qh:\(period.start)-\(period.end)")
+        }
+        if config.workHoursEnabled {
+            let workPeriod = QuietHourPeriod(start: config.workStartTime, end: config.workEndTime)
+            if !workPeriod.isActive(at: now) {
+                reasons.insert("outside_work_hours")
+            }
+        }
+        return reasons
+    }
+
     func activateOvertime() {
-        overtimeActive = true
-        db.saveFlag("overtime_active", value: true)
+        // Skip only the currently active quiet reasons
+        let reasons = currentActiveQuietReasons()
+        skippedQuietReasons.formUnion(reasons)
         if isInQuietHours {
             isInQuietHours = false
             stopQuietCountdown()
             autoQuietPaused = false
-    
+
             startWork()
         }
     }
 
     private func checkQuietHours() {
-        let cal = Calendar.current
-        let now = Date()
-        let weekday = cal.component(.weekday, from: now)
-        let isWorkDay = config.workDays.contains(weekday)
-        let inQuietPeriod = config.quietHours.contains { $0.isActive(at: now) }
+        let activeReasons = currentActiveQuietReasons()
 
-        // Check if outside configured work hours
-        var outsideWorkHours = false
-        if config.workHoursEnabled {
-            let workPeriod = QuietHourPeriod(start: config.workStartTime, end: config.workEndTime)
-            outsideWorkHours = !workPeriod.isActive(at: now)
-        }
+        // Remove skipped reasons that are no longer active (the period ended)
+        skippedQuietReasons = skippedQuietReasons.intersection(activeReasons)
 
-        let shouldPause = !isWorkDay || inQuietPeriod || (outsideWorkHours && !overtimeActive)
-
-        // Reset overtime when entering work hours again
-        if overtimeActive && !outsideWorkHours && isWorkDay {
-            overtimeActive = false
-            db.saveFlag("overtime_active", value: false)
-        }
+        // Pause only if there are active reasons the user hasn't skipped
+        let nonSkippedReasons = activeReasons.subtracting(skippedQuietReasons)
+        let shouldPause = !nonSkippedReasons.isEmpty
 
         if shouldPause && !isInQuietHours {
             isInQuietHours = true
