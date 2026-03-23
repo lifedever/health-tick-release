@@ -1,1 +1,405 @@
-.hero-logo-wrap {\n  position: relative;\n  display: block;\n  width: 100px;\n  margin: 0 auto 32px;\n  animation: fadeUp 0.8s ease both;\n}
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HealthTick - macOS 菜单栏久坐提醒工具</title>
+<meta name="description" content="HealthTick 是一款 macOS 菜单栏健康打卡工具，帮助你养成定时休息的好习惯。久坐提醒、强制休息、徽章激励。">
+<link rel="icon" type="image/svg+xml" href="logo.svg">
+<link rel="preconnect" href="https://fonts.loli.net">
+<link rel="preconnect" href="https://gstatic.loli.net" crossorigin>
+<link href="https://fonts.loli.net/css2?family=Noto+Serif+SC:wght@400;700;900&family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --green-50: #ecfdf5;
+  --green-100: #d1fae5;
+  --green-200: #a7f3d0;
+  --green-400: #34d399;
+  --green-500: #10b981;
+  --green-600: #059669;
+  --green-700: #047857;
+  --green-900: #064e3b;
+  --sand-50: #fefdf8;
+  --sand-100: #faf6ee;
+  --sand-200: #f0ead6;
+  --sand-300: #e0d6b8;
+  --sand-600: #8a7e5a;
+  --ink: #1a2e1a;
+  --ink-light: #3d5a3d;
+  --ink-muted: #6b8a6b;
+  --radius: 20px;
+  --radius-sm: 12px;
+  --card-bg: rgba(255,255,255,0.7);
+  --card-solid: #fff;
+  --nav-scrolled-bg: rgba(254, 253, 248, 0.85);
+  --nav-scrolled-border: var(--green-200);
+  --screenshot-shadow: rgba(0,0,0,0.1);
+  --btn-nav-bg: rgba(255,255,255,0.8);
+  --install-note-bg: #fffbeb;
+  --install-note-color: #92400e;
+  --workflow-bg: #1a2e1a;
+  --workflow-text-muted: rgba(255,255,255,0.6);
+  --donate-bg: linear-gradient(135deg, var(--green-50), var(--green-100));
+  --donate-border: var(--green-200);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --green-50: #071f14;
+    --green-100: #0d3322;
+    --green-200: #155e3d;
+    --sand-50: #0f1210;
+    --sand-100: #161a17;
+    --sand-200: #1e241f;
+    --sand-300: #2e362f;
+    --sand-600: #8a917b;
+    --ink: #e4e8e4;
+    --ink-light: #b8c8b8;
+    --ink-muted: #7f9a7f;
+    --card-bg: rgba(30, 36, 31, 0.7);
+    --card-solid: #1a201b;
+    --nav-scrolled-bg: rgba(15, 18, 16, 0.85);
+    --nav-scrolled-border: #1e3a28;
+    --screenshot-shadow: rgba(0,0,0,0.4);
+    --btn-nav-bg: rgba(30, 36, 31, 0.8);
+    --install-note-bg: #1c1a0e;
+    --install-note-color: #d4a847;
+    --workflow-bg: #0a1a0e;
+    --workflow-text-muted: rgba(255,255,255,0.5);
+    --donate-bg: linear-gradient(135deg, #0d1f14, #0d3322);
+    --donate-border: #155e3d;
+  }
+}
+
+html { scroll-behavior: smooth; color-scheme: light dark; }
+
+body {
+  font-family: 'Noto Sans SC', -apple-system, sans-serif;
+  color: var(--ink);
+  background: var(--sand-50);
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+.container { max-width: 1100px; margin: 0 auto; padding: 0 32px; }
+
+.ambient { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
+.ambient::before { content: ''; position: absolute; width: 800px; height: 800px; top: -200px; right: -200px; background: radial-gradient(circle, var(--green-200) 0%, transparent 70%); opacity: 0.4; animation: drift 20s ease-in-out infinite alternate; }
+.ambient::after { content: ''; position: absolute; width: 600px; height: 600px; bottom: 10%; left: -150px; background: radial-gradient(circle, var(--green-100) 0%, transparent 70%); opacity: 0.3; animation: drift 25s ease-in-out infinite alternate-reverse; }
+@keyframes drift { from { transform: translate(0, 0) scale(1); } to { transform: translate(60px, 40px) scale(1.1); } }
+
+nav { position: fixed; top: 0; left: 0; right: 0; z-index: 100; padding: 16px 0; transition: all 0.4s ease; }
+nav.scrolled { background: var(--nav-scrolled-bg); backdrop-filter: blur(20px) saturate(1.5); -webkit-backdrop-filter: blur(20px) saturate(1.5); border-bottom: 1px solid var(--nav-scrolled-border); }
+nav .container { display: flex; align-items: center; justify-content: space-between; }
+.nav-brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--ink); }
+.nav-brand img { width: 32px; height: 32px; }
+.nav-brand span { font-family: 'Noto Serif SC', serif; font-weight: 700; font-size: 18px; }
+.nav-links { display: flex; gap: 32px; align-items: center; }
+.nav-links a { text-decoration: none; color: var(--ink-muted); font-size: 14px; font-weight: 500; transition: color 0.2s; }
+.nav-links a:hover { color: var(--green-600); }
+.nav-cta { background: var(--green-500) !important; color: #fff !important; padding: 8px 20px; border-radius: 100px; font-weight: 500 !important; transition: all 0.2s !important; }
+.nav-cta:hover { background: var(--green-600) !important; transform: translateY(-1px); }
+
+.hero { min-height: 100vh; display: flex; align-items: center; justify-content: center; text-align: center; padding: 120px 32px 80px; position: relative; }
+.hero-content { max-width: 700px; }
+.hero-logo-wrap { position: relative; display: block; width: 100px; margin: 0 auto 32px; animation: fadeUp 0.8s ease both; }
+.hero-logo { width: 100px; height: 100px; display: block; filter: drop-shadow(0 8px 24px rgba(16, 185, 129, 0.25)); }
+.hero-version { position: absolute; top: -8px; right: -20px; background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 100px; letter-spacing: 0.5px; box-shadow: 0 2px 8px rgba(99, 102, 241, 0.35); }
+.hero-badge { display: inline-flex; align-items: center; gap: 6px; background: var(--green-100); color: var(--green-700); padding: 6px 16px; border-radius: 100px; font-size: 13px; font-weight: 500; margin-bottom: 24px; animation: fadeUp 0.8s ease 0.1s both; }
+.hero-badge::before { content: ''; width: 6px; height: 6px; background: var(--green-500); border-radius: 50%; }
+.hero h1 { font-family: 'Noto Serif SC', serif; font-size: clamp(42px, 7vw, 72px); font-weight: 900; line-height: 1.15; letter-spacing: -0.02em; margin-bottom: 20px; animation: fadeUp 0.8s ease 0.2s both; }
+.hero h1 .accent { background: linear-gradient(135deg, var(--green-500), var(--green-400)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+.hero-sub { font-size: 18px; color: var(--ink-muted); line-height: 1.7; margin-bottom: 40px; font-weight: 300; animation: fadeUp 0.8s ease 0.3s both; }
+.hero-actions { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; animation: fadeUp 0.8s ease 0.4s both; }
+.btn-primary { display: inline-flex; align-items: center; gap: 8px; background: linear-gradient(135deg, var(--green-500), var(--green-600)); color: #fff; padding: 16px 36px; border-radius: 100px; text-decoration: none; font-size: 16px; font-weight: 500; transition: all 0.3s ease; box-shadow: 0 4px 20px rgba(16, 185, 129, 0.3); }
+.btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(16, 185, 129, 0.4); }
+.btn-secondary { display: inline-flex; align-items: center; gap: 8px; background: transparent; color: var(--ink-light); padding: 16px 36px; border-radius: 100px; text-decoration: none; font-size: 16px; font-weight: 500; border: 1.5px solid var(--sand-300); transition: all 0.3s ease; }
+.btn-secondary:hover { border-color: var(--green-400); color: var(--green-600); transform: translateY(-2px); }
+.hero-meta { margin-top: 32px; display: flex; gap: 24px; justify-content: center; animation: fadeUp 0.8s ease 0.5s both; }
+.hero-meta span { font-size: 13px; color: var(--ink-muted); display: flex; align-items: center; gap: 6px; }
+
+.scroll-hint { position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%); animation: bounce 2s ease-in-out infinite; }
+.scroll-hint svg { width: 24px; height: 24px; color: var(--ink-muted); opacity: 0.4; }
+@keyframes bounce { 0%, 100% { transform: translateX(-50%) translateY(0); } 50% { transform: translateX(-50%) translateY(8px); } }
+
+.section { padding: 100px 0; }
+.section-label { font-size: 13px; font-weight: 700; color: var(--green-500); text-transform: uppercase; letter-spacing: 3px; margin-bottom: 12px; }
+.section-title { font-family: 'Noto Serif SC', serif; font-size: clamp(28px, 4vw, 40px); font-weight: 700; margin-bottom: 16px; line-height: 1.3; }
+.section-desc { font-size: 16px; color: var(--ink-muted); max-width: 560px; line-height: 1.7; font-weight: 300; }
+
+.features-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-top: 60px; }
+.feature-card { background: var(--card-bg); backdrop-filter: blur(10px); border: 1px solid var(--green-100); border-radius: var(--radius); padding: 32px 28px; transition: all 0.3s ease; position: relative; overflow: hidden; }
+.feature-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, var(--green-400), var(--green-200)); opacity: 0; transition: opacity 0.3s; }
+.feature-card:hover { transform: translateY(-4px); box-shadow: 0 12px 40px rgba(16, 185, 129, 0.1); border-color: var(--green-200); }
+.feature-card:hover::before { opacity: 1; }
+.feature-icon { width: 48px; height: 48px; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 22px; margin-bottom: 20px; background: var(--green-50); }
+.feature-card h3 { font-size: 16px; font-weight: 700; margin-bottom: 8px; }
+.feature-card p { font-size: 14px; color: var(--ink-muted); line-height: 1.6; }
+
+.screenshots-section { background: linear-gradient(180deg, var(--sand-50) 0%, var(--green-50) 50%, var(--sand-50) 100%); }
+@media (prefers-color-scheme: dark) { .screenshots-section { background: linear-gradient(180deg, var(--sand-50) 0%, #091a10 50%, var(--sand-50) 100%); } }
+.screenshots-track { margin-top: 60px; position: relative; }
+.screenshots-scroll { display: flex; gap: 24px; overflow-x: auto; scroll-snap-type: x mandatory; -webkit-overflow-scrolling: touch; padding: 20px 0 40px; scrollbar-width: none; }
+.screenshots-scroll::-webkit-scrollbar { display: none; }
+.screenshot-item { scroll-snap-align: center; flex-shrink: 0; position: relative; }
+.screenshot-item img { height: 480px; width: auto; border-radius: var(--radius); box-shadow: 0 20px 60px var(--screenshot-shadow), 0 1px 3px rgba(0,0,0,0.05); transition: transform 0.4s ease; }
+.screenshot-item:hover img { transform: scale(1.02); }
+.screenshot-label { text-align: center; margin-top: 16px; font-size: 14px; color: var(--ink-muted); font-weight: 500; }
+.screenshots-nav { display: flex; justify-content: center; gap: 12px; margin-top: 8px; }
+.screenshots-nav button { width: 40px; height: 40px; border-radius: 50%; border: 1.5px solid var(--sand-300); background: var(--btn-nav-bg); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; color: var(--ink-muted); }
+.screenshots-nav button:hover { border-color: var(--green-400); color: var(--green-600); background: var(--card-solid); }
+
+.workflow { background: var(--workflow-bg); color: #fff; border-radius: 32px; padding: 80px 60px; margin-top: 60px; position: relative; overflow: hidden; }
+.workflow::before { content: ''; position: absolute; width: 400px; height: 400px; top: -100px; right: -100px; background: radial-gradient(circle, var(--green-700) 0%, transparent 70%); opacity: 0.3; }
+.workflow-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 32px; margin-top: 48px; position: relative; z-index: 1; }
+.workflow-step { text-align: center; }
+.workflow-num { width: 48px; height: 48px; border-radius: 50%; background: linear-gradient(135deg, var(--green-500), var(--green-400)); display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 700; margin: 0 auto 16px; }
+.workflow-step h4 { font-size: 16px; font-weight: 700; margin-bottom: 8px; }
+.workflow-step p { font-size: 13px; color: var(--workflow-text-muted); line-height: 1.6; }
+
+.install-cards { display: grid; grid-template-columns: repeat(2, 1fr); gap: 24px; margin-top: 60px; }
+.install-card { background: var(--card-solid); border: 1px solid var(--green-100); border-radius: var(--radius); padding: 36px; position: relative; }
+.install-card.recommended::after { content: '推荐'; position: absolute; top: 16px; right: 16px; background: var(--green-100); color: var(--green-700); font-size: 12px; font-weight: 700; padding: 4px 12px; border-radius: 100px; }
+.install-card h3 { font-size: 20px; font-weight: 700; margin-bottom: 8px; display: flex; align-items: center; gap: 10px; }
+.install-card h3 span { font-size: 24px; }
+.install-card .subtitle { color: var(--ink-muted); font-size: 14px; margin-bottom: 24px; }
+.code-block { background: #1a2e1a; color: var(--green-400); border-radius: var(--radius-sm); padding: 16px 20px; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 14px; line-height: 1.8; position: relative; overflow-x: auto; }
+.code-block .comment { color: rgba(255,255,255,0.3); }
+.code-block .cmd { color: rgba(255,255,255,0.6); }
+.install-steps { display: flex; flex-direction: column; gap: 16px; }
+.install-step { display: flex; gap: 14px; align-items: flex-start; }
+.install-step-num { width: 28px; height: 28px; border-radius: 50%; background: var(--green-50); color: var(--green-600); display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; flex-shrink: 0; }
+.install-step p { font-size: 14px; line-height: 1.6; color: var(--ink-light); padding-top: 3px; }
+.install-note { margin-top: 20px; padding: 14px 18px; background: var(--install-note-bg); border-radius: var(--radius-sm); font-size: 13px; color: var(--install-note-color); line-height: 1.6; }
+
+.donate-card { background: var(--donate-bg); border: 1.5px solid var(--donate-border); border-radius: 24px; padding: 48px 40px; position: relative; overflow: hidden; }
+.donate-glow { position: absolute; top: -60px; right: -60px; width: 200px; height: 200px; background: radial-gradient(circle, var(--green-200) 0%, transparent 70%); opacity: 0.5; }
+
+footer { padding: 60px 0; border-top: 1px solid var(--green-100); margin-top: 40px; }
+.footer-inner { display: flex; justify-content: space-between; align-items: center; }
+.footer-brand { display: flex; align-items: center; gap: 10px; }
+.footer-brand img { width: 28px; height: 28px; opacity: 0.6; }
+.footer-brand span { font-family: 'Noto Serif SC', serif; font-weight: 700; font-size: 16px; color: var(--ink-muted); }
+.footer-info { text-align: right; font-size: 13px; color: var(--ink-muted); line-height: 1.8; }
+.footer-info a { color: var(--green-600); text-decoration: none; }
+.footer-info a:hover { text-decoration: underline; }
+
+@media (prefers-color-scheme: dark) {
+  .hero-logo { filter: drop-shadow(0 8px 24px rgba(16, 185, 129, 0.15)); }
+  .ambient::before { opacity: 0.15; }
+  .ambient::after { opacity: 0.1; }
+  .feature-card:hover { box-shadow: 0 12px 40px rgba(16, 185, 129, 0.05); }
+  .btn-primary { box-shadow: 0 4px 20px rgba(16, 185, 129, 0.2); }
+  .btn-primary:hover { box-shadow: 0 8px 30px rgba(16, 185, 129, 0.25); }
+}
+
+@keyframes fadeUp { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: translateY(0); } }
+.reveal { opacity: 0; transform: translateY(30px); transition: all 0.7s cubic-bezier(0.22, 1, 0.36, 1); }
+.reveal.visible { opacity: 1; transform: translateY(0); }
+
+@media (max-width: 768px) {
+  .nav-links a:not(.nav-cta) { display: none; }
+  .features-grid { grid-template-columns: 1fr; }
+  .workflow { padding: 48px 28px; border-radius: 24px; }
+  .workflow-grid { grid-template-columns: repeat(2, 1fr); gap: 24px; }
+  .install-cards { grid-template-columns: 1fr; }
+  .footer-inner { flex-direction: column; gap: 20px; text-align: center; }
+  .footer-info { text-align: center; }
+  .hero-meta { flex-direction: column; gap: 8px; }
+  .screenshot-item img { height: 360px; }
+}
+</style>
+</head>
+<body>
+
+<div class="ambient"></div>
+
+<nav id="nav">
+  <div class="container">
+    <a href="#" class="nav-brand">
+      <img src="logo.svg" alt="HealthTick">
+      <span>HealthTick</span>
+    </a>
+    <div class="nav-links">
+      <a href="#features">功能</a>
+      <a href="#screenshots">截图</a>
+      <a href="#install">安装</a>
+      <a href="https://github.com/lifedever/health-tick-release" target="_blank">GitHub</a>
+      <a href="https://lifedever.github.io/sponsor/" target="_blank" style="color: var(--green-600); font-weight: 600;">💖 捐赠</a>
+      <a href="https://github.com/lifedever/health-tick-release/releases/latest" class="nav-cta">下载</a>
+    </div>
+  </div>
+</nav>
+
+<section class="hero">
+  <div class="hero-content">
+    <div class="hero-logo-wrap">
+      <img src="logo.svg" alt="HealthTick" class="hero-logo">
+      <span class="hero-version">v1.5.0</span>
+    </div>
+    <div class="hero-badge">macOS 14+ &nbsp;·&nbsp; 免费 &nbsp;·&nbsp; 开源</div>
+    <h1>关爱健康，从每一次<span class="accent">休息</span>开始</h1>
+    <p class="hero-sub">
+      HealthTick 是一款 macOS 菜单栏久坐提醒工具。<br>
+      智能计时、强制休息、徽章激励，帮你养成健康的工作节奏。
+    </p>
+    <div class="hero-actions">
+      <a href="https://github.com/lifedever/health-tick-release/releases/latest" class="btn-primary">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        免费下载
+      </a>
+    </div>
+    <div class="hero-meta">
+      <span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+        Apple Silicon / Intel
+      </span>
+      <span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>
+        为你的健康而生
+      </span>
+    </div>
+  </div>
+  <div class="scroll-hint">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+  </div>
+</section>
+
+<section class="section" id="features">
+  <div class="container">
+    <div class="reveal">
+      <div class="section-label">Features</div>
+      <div class="section-title">专为久坐族设计</div>
+      <div class="section-desc">轻量常驻菜单栏，不打扰工作，但绝不让你忘记休息。</div>
+    </div>
+    <div class="features-grid">
+      <div class="feature-card reveal"><div class="feature-icon">🕐</div><h3>智能计时</h3><p>自定义工作时长和休息时长，菜单栏实时显示倒计时进度。</p></div>
+      <div class="feature-card reveal"><div class="feature-icon">💪</div><h3>强制休息</h3><p>休息时弹出提醒窗口，支持悬浮窗、全屏强制等多种模式。</p></div>
+      <div class="feature-card reveal"><div class="feature-icon">🔍</div><h3>操作检测</h3><p>休息期间检测到键鼠操作自动暂停倒计时，确保真正休息。</p></div>
+      <div class="feature-card reveal"><div class="feature-icon">🎯</div><h3>每日目标</h3><p>设定每天休息次数目标，7 天像素图直观追踪完成进度。</p></div>
+      <div class="feature-card reveal"><div class="feature-icon">🔥</div><h3>连续打卡</h3><p>记录连续达标天数，断签不惩罚未使用的日子，鼓励坚持。</p></div>
+      <div class="feature-card reveal"><div class="feature-icon">🏆</div><h3>徽章激励</h3><p>18 枚徽章等你解锁，连续打卡 + 累计打卡双线成就体系。</p></div>
+    </div>
+
+    <div class="workflow reveal">
+      <div class="section-label" style="color: var(--green-400);">How it works</div>
+      <div class="section-title" style="color: #fff;">四步开始健康节奏</div>
+      <div class="workflow-grid">
+        <div class="workflow-step"><div class="workflow-num">1</div><h4>工作计时</h4><p>启动后自动开始倒计时，菜单栏图标显示进度。</p></div>
+        <div class="workflow-step"><div class="workflow-num">2</div><h4>休息提醒</h4><p>工作时长结束，弹出提醒窗口，可设置是否需要手动确认。</p></div>
+        <div class="workflow-step"><div class="workflow-num">3</div><h4>强制休息</h4><p>进入休息倒计时，检测到操作会自动暂停，直到你真正休息。</p></div>
+        <div class="workflow-step"><div class="workflow-num">4</div><h4>继续工作</h4><p>休息结束自动开始下一轮，打卡记录 +1，向徽章迈进。</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section screenshots-section" id="screenshots">
+  <div class="container">
+    <div class="reveal" style="text-align: center;">
+      <div class="section-label">Screenshots</div>
+      <div class="section-title">简洁优雅，一目了然</div>
+      <div class="section-desc" style="margin: 0 auto;">原生 SwiftUI 打造，完美融入 macOS 生态。</div>
+    </div>
+  </div>
+  <div class="screenshots-track">
+    <div class="screenshots-scroll" id="screenshotsScroll">
+      <div style="flex-shrink:0; width: max(24px, calc((100vw - 1100px)/2 + 32px));"></div>
+      <div class="screenshot-item"><img src="screenshots/menu.png" alt="菜单栏主界面" loading="lazy"><div class="screenshot-label">菜单栏主界面</div></div>
+      <div class="screenshot-item"><img src="screenshots/settings.png" alt="设置面板" loading="lazy"><div class="screenshot-label">设置面板</div></div>
+      <div class="screenshot-item"><img src="screenshots/onboarding-1.png" alt="欢迎引导" loading="lazy"><div class="screenshot-label">首次使用引导</div></div>
+      <div class="screenshot-item"><img src="screenshots/onboarding-2.png" alt="工作日设置" loading="lazy"><div class="screenshot-label">午休与工作日</div></div>
+      <div class="screenshot-item"><img src="screenshots/onboarding-3.png" alt="工作节奏" loading="lazy"><div class="screenshot-label">工作节奏配置</div></div>
+      <div class="screenshot-item"><img src="screenshots/onboarding-4.png" alt="推荐设置" loading="lazy"><div class="screenshot-label">智能推荐设置</div></div>
+      <div class="screenshot-item"><img src="screenshots/help.png" alt="使用指南" loading="lazy"><div class="screenshot-label">完整使用指南</div></div>
+      <div style="flex-shrink:0; width: 32px;"></div>
+    </div>
+    <div class="screenshots-nav">
+      <button onclick="scrollScreenshots(-1)" aria-label="上一张"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg></button>
+      <button onclick="scrollScreenshots(1)" aria-label="下一张"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg></button>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="install">
+  <div class="container">
+    <div class="reveal" style="text-align: center;">
+      <div class="section-label">Install</div>
+      <div class="section-title">两种方式，即刻开始</div>
+    </div>
+    <div class="install-cards">
+      <div class="install-card recommended reveal">
+        <h3><span>🍺</span> Homebrew</h3>
+        <p class="subtitle">一行命令，自动更新</p>
+        <div class="code-block">
+          <span class="comment"># 安装</span><br>
+          <span class="cmd">brew tap</span> lifedever/tap<br>
+          <span class="cmd">brew install</span> --cask health-tick<br><br>
+          <span class="comment"># 更新</span><br>
+          <span class="cmd">brew upgrade</span> --cask health-tick
+        </div>
+      </div>
+      <div class="install-card reveal">
+        <h3><span>📦</span> 手动下载</h3>
+        <p class="subtitle">下载 DMG，拖拽安装</p>
+        <div class="install-steps">
+          <div class="install-step"><div class="install-step-num">1</div><p>前往 <a href="https://github.com/lifedever/health-tick-release/releases/latest" style="color: var(--green-600); text-decoration: none; font-weight: 500;">Releases</a> 页面下载 <strong>.dmg</strong> 文件</p></div>
+          <div class="install-step"><div class="install-step-num">2</div><p>打开 DMG，将 <strong>HealthTick</strong> 拖入 Applications 文件夹</p></div>
+          <div class="install-step"><div class="install-step-num">3</div><p>启动应用，完成引导设置，开始健康打卡</p></div>
+        </div>
+        <div class="install-note">💡 首次打开可能提示"无法验证开发者"，请前往<strong>系统设置 → 隐私与安全性</strong>点击"仍要打开"。</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="section" id="donate" style="padding: 60px 0 80px;">
+  <div class="container">
+    <div class="reveal" style="text-align: center;">
+      <div class="donate-card">
+        <div class="donate-glow"></div>
+        <div style="position: relative; z-index: 1;">
+          <div style="font-size: 40px; margin-bottom: 16px;">💖</div>
+          <div class="section-title" style="margin-bottom: 12px;">喜欢 HealthTick？</div>
+          <p style="color: var(--ink-muted); font-size: 16px; line-height: 1.7; max-width: 480px; margin: 0 auto 28px;">
+            HealthTick 免费开源，由独立开发者维护。<br>你的支持是持续更新的最大动力。
+          </p>
+          <a href="https://lifedever.github.io/sponsor/" target="_blank" style="display: inline-flex; align-items: center; gap: 8px; background: linear-gradient(135deg, #e8596e, #d94459); color: #fff; padding: 14px 36px; border-radius: 100px; text-decoration: none; font-size: 16px; font-weight: 600; transition: all 0.3s ease; box-shadow: 0 4px 20px rgba(233, 89, 110, 0.3);" onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 8px 30px rgba(233,89,110,0.4)'" onmouseout="this.style.transform='';this.style.boxShadow='0 4px 20px rgba(233,89,110,0.3)'">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+            捐赠支持
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    <div class="footer-inner">
+      <div class="footer-brand">
+        <img src="logo.svg" alt="HealthTick">
+        <span>HealthTick</span>
+      </div>
+      <div class="footer-info">
+        采用 <a href="https://www.gnu.org/licenses/gpl-3.0.html" target="_blank">GPL-3.0</a> 许可证开源<br>
+        <a href="https://github.com/lifedever/health-tick-release" target="_blank">GitHub</a> &nbsp;·&nbsp;
+        <a href="https://github.com/lifedever/health-tick-release/issues" target="_blank">反馈</a> &nbsp;·&nbsp;
+        <a href="https://lifedever.github.io/sponsor/" target="_blank">捐赠支持</a> &nbsp;·&nbsp;
+        Made with ❤️ for your health
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+const nav = document.getElementById('nav');
+window.addEventListener('scroll', () => { nav.classList.toggle('scrolled', window.scrollY > 40); });
+const observer = new IntersectionObserver((entries) => { entries.forEach((entry, i) => { if (entry.isIntersecting) { setTimeout(() => entry.target.classList.add('visible'), i * 80); observer.unobserve(entry.target); } }); }, { threshold: 0.15 });
+document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+function scrollScreenshots(dir) { document.getElementById('screenshotsScroll').scrollBy({ left: dir * 400, behavior: 'smooth' }); }
+</script>
+</body>
+</html>
