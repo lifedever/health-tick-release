@@ -396,6 +396,7 @@ struct AppTab: View {
                             Toggle("", isOn: Binding(
                                 get: { state.config.eyeCareMode },
                                 set: { newValue in
+                                    state.suppressNextRestartPrompt = true
                                     if newValue {
                                         state.config.savedWorkMinutes = state.config.workMinutes
                                         state.config.savedBreakSeconds = state.config.breakSeconds
@@ -410,6 +411,7 @@ struct AppTab: View {
                                         state.config.breakSeconds = state.config.savedBreakSeconds
                                         state.config.breakConfirm = state.config.savedBreakConfirm
                                     }
+                                    state.restartCurrentPhase()
                                 }
                             ))
                             .toggleStyle(.switch)
