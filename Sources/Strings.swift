@@ -98,6 +98,9 @@ struct L {
     static var breakDuration: String { isZh ? "休息时长" : "Break Duration" }
     static var dailyGoal: String { isZh ? "每日目标" : "Daily Goal" }
     static var unitMinutes: String { isZh ? "分钟" : "min" }
+    static var unitSeconds: String { isZh ? "秒" : "s" }
+    static var eyeCareMode: String { isZh ? "20-20-20 护眼模式" : "20-20-20 Eye Care" }
+    static var eyeCareDesc: String { isZh ? "每 20 分钟远眺 20 秒，保护视力" : "Look 20 feet away for 20s every 20 min" }
     static var unitTimes: String { isZh ? "次" : "times" }
     static var breakWindow: String { isZh ? "休息窗口" : "Break Window" }
     static var preview: String { isZh ? "预览" : "Preview" }
@@ -288,7 +291,7 @@ struct L {
     }
     static var helpFeatures: String { isZh ? "功能说明" : "Features" }
     static var helpFeatureWorkDuration: String { isZh ? "每轮工作的倒计时时间，范围 1-120 分钟。" : "Work countdown duration per round, range 1-120 minutes." }
-    static var helpFeatureBreakDuration: String { isZh ? "每次休息的倒计时时间，范围 1-15 分钟。" : "Break countdown duration, range 1-15 minutes." }
+    static var helpFeatureBreakDuration: String { isZh ? "每次休息的倒计时时间，范围 20 秒至 15 分钟。" : "Break countdown duration, range 20 seconds to 15 minutes." }
     static var helpFeatureDailyGoal: String { isZh ? "每天需要完成的休息次数，范围 1-20 次。达标后连续天数 +1。" : "Daily required break count, range 1-20. Meeting the goal adds to your streak." }
     static var helpFeatureBreakPos: String { isZh ? "可选右上角、左上角、屏幕中央（悬浮）或全屏强制。" : "Options: top-right, top-left, center (floating), or fullscreen (forced)." }
     static var helpFeatureBreakPosTitle: String { isZh ? "休息窗口位置" : "Break Window Position" }
