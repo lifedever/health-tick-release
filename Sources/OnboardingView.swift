@@ -16,7 +16,7 @@ struct OnboardingView: View {
 
     // Step 2: Work rhythm
     @State private var workInterval: Double = 60
-    @State private var breakDuration: Double = 2
+    @State private var breakDuration: Double = 120  // now in seconds
 
     private var effectiveMinutes: Int {
         let totalMin = Int(workEnd.timeIntervalSince(workStart)) / 60
@@ -25,7 +25,7 @@ struct OnboardingView: View {
     }
 
     private var recommendedGoal: Int {
-        let cycle = Int(workInterval) + Int(breakDuration)
+        let cycle = Int(workInterval) + Int(breakDuration) / 60
         guard cycle > 0 else { return 1 }
         return max(1, effectiveMinutes / cycle)
     }
@@ -296,12 +296,12 @@ struct OnboardingView: View {
                         Text(L.onboardingBreakDuration)
                             .font(.callout)
                         Spacer()
-                        Text("\(Int(breakDuration)) \(L.unitMinutes)")
+                        Text(formatBreakDuration(Int(breakDuration)))
                             .font(.callout.bold().monospacedDigit())
                             .foregroundStyle(.orange)
-                            .frame(width: 65, alignment: .trailing)
+                            .frame(width: 80, alignment: .trailing)
                     }
-                    Slider(value: $breakDuration, in: 1...15, step: 1)
+                    Slider(value: $breakDuration, in: 20...900, step: 10)
                         .tint(.orange)
                 }
             }
@@ -333,7 +333,7 @@ struct OnboardingView: View {
                 Divider().padding(.leading, 44)
                 summaryRow(icon: "deskclock.fill", color: .green, label: L.workDuration, value: "\(Int(workInterval)) \(L.unitMinutes)")
                 Divider().padding(.leading, 44)
-                summaryRow(icon: "cup.and.saucer.fill", color: .orange, label: L.breakDuration, value: "\(Int(breakDuration)) \(L.unitMinutes)")
+                summaryRow(icon: "cup.and.saucer.fill", color: .orange, label: L.breakDuration, value: formatBreakDuration(Int(breakDuration)))
                 Divider().padding(.leading, 44)
                 summaryRow(icon: "target", color: .purple, label: L.onboardingDailyGoal, value: "\(recommendedGoal) \(L.unitTimes)")
             }
@@ -371,11 +371,23 @@ struct OnboardingView: View {
         .padding(.vertical, 10)
     }
 
+    // MARK: - Helpers
+
+    private func formatBreakDuration(_ seconds: Int) -> String {
+        if seconds < 60 {
+            return "\(seconds) \(L.unitSeconds)"
+        } else if seconds % 60 == 0 {
+            return "\(seconds / 60) \(L.unitMinutes)"
+        } else {
+            return "\(seconds / 60)\(L.unitMinutes)\(seconds % 60)\(L.unitSeconds)"
+        }
+    }
+
     // MARK: - Actions
 
     private func applySettings() {
         state.config.workMinutes = Int(workInterval)
-        state.config.breakSeconds = Int(breakDuration) * 60
+        state.config.breakSeconds = Int(breakDuration)
         state.config.dailyGoal = recommendedGoal
         state.config.workDays = workDays
 
