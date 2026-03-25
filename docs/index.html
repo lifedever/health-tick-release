@@ -396,10 +396,12 @@ footer { padding: 60px 0; border-top: 1px solid var(--green-100); margin-top: 40
 </footer>
 
 <script>
-fetch('https://api.github.com/repos/lifedever/health-tick-release/releases/latest')
-  .then(r => r.json())
-  .then(d => { if (d.tag_name) document.getElementById('app-version').textContent = d.tag_name; })
-  .catch(() => {});
+function setVersion(d) { if (d.tag_name) document.getElementById('app-version').textContent = d.tag_name; }
+fetch('https://gitee.com/api/v5/repos/lifedever/health-tick-release/releases/latest')
+  .then(r => r.ok ? r.json() : Promise.reject())
+  .then(setVersion)
+  .catch(() => fetch('https://api.github.com/repos/lifedever/health-tick-release/releases/latest')
+    .then(r => r.json()).then(setVersion).catch(() => {}));
 const nav = document.getElementById('nav');
 window.addEventListener('scroll', () => { nav.classList.toggle('scrolled', window.scrollY > 40); });
 const observer = new IntersectionObserver((entries) => { entries.forEach((entry, i) => { if (entry.isIntersecting) { setTimeout(() => entry.target.classList.add('visible'), i * 80); observer.unobserve(entry.target); } }); }, { threshold: 0.15 });
