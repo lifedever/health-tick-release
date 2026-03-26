@@ -573,6 +573,19 @@ final class AppState {
         }
     }
 
+    func manualBreak() {
+        guard phase == .working else { return }
+        timer?.invalidate()
+        alertRepeatTimer?.invalidate()
+
+        // End current work session so worked time is recorded
+        if let sid = currentSessionId {
+            db.endWork(sessionId: sid)
+        }
+
+        startBreak()
+    }
+
     func reset() {
         timer?.invalidate()
         alertRepeatTimer?.invalidate()

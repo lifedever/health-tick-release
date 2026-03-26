@@ -47,6 +47,7 @@ struct L {
     static var pause: String { isZh ? "暂停" : "Pause" }
     static var resume: String { isZh ? "继续" : "Resume" }
     static var resetAction: String { isZh ? "重置" : "Reset" }
+    static var manualBreak: String { isZh ? "休息" : "Break" }
     static var achievements: String { isZh ? "成就" : "Stats" }
     static var help: String { isZh ? "帮助" : "Help" }
     static var settings: String { isZh ? "设置" : "Settings" }

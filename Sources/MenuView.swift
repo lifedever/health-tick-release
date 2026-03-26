@@ -153,7 +153,7 @@ private struct MenuTimerCircle: View {
                 )
                 .rotationEffect(.degrees(-90))
 
-            VStack(spacing: 2) {
+            VStack(spacing: 6) {
                 if isOffDuty {
                     Button {
                         if state.goalAutoStopped {
@@ -175,9 +175,25 @@ private struct MenuTimerCircle: View {
                 } else {
                     Text(state.formattedTime)
                         .font(.system(size: 28, weight: .light, design: .monospaced))
-                    Text(state.phaseLabel)
-                        .font(.system(size: 13))
-                        .foregroundStyle(.primary.opacity(0.6))
+                    if state.phase == .working {
+                        Button {
+                            state.manualBreak()
+                        } label: {
+                            HStack(spacing: 3) {
+                                Image(systemName: "cup.and.saucer.fill")
+                                    .font(.system(size: 10))
+                                Text(L.manualBreak)
+                                    .font(.system(size: 11, weight: .medium))
+                            }
+                            .foregroundStyle(.primary.opacity(0.5))
+                        }
+                        .buttonStyle(.borderless)
+                        .handCursor()
+                    } else {
+                        Text(state.phaseLabel)
+                            .font(.system(size: 13))
+                            .foregroundStyle(.primary.opacity(0.6))
+                    }
                 }
             }
         }
