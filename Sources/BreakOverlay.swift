@@ -499,7 +499,7 @@ final class BreakOverlayManager {
     // MARK: - Menu window pinning
 
     private func pinMenuBarExtra() {
-        findMenuBarExtraPanel()
+        findAndPinPanel()
 
         menuPinTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
             guard let self else { return }
@@ -509,7 +509,7 @@ final class BreakOverlayManager {
         }
     }
 
-    private func findMenuBarExtraPanel() {
+    private func findAndPinPanel() {
         guard let app = NSApp else { return }
         for window in app.windows {
             guard let panel = window as? NSPanel else { continue }
@@ -521,9 +521,9 @@ final class BreakOverlayManager {
                 originalPanelLevel = panel.level
                 originalHidesOnDeactivate = panel.hidesOnDeactivate
                 panel.hidesOnDeactivate = false
-                panel.level = .floating
+                // Keep the panel's original level — changing to .floating
+                // causes vibrancy compositing glitches on white backgrounds
                 panel.orderFrontRegardless()
-                // Activate app so keyboard shortcuts work
                 NSApp.activate(ignoringOtherApps: true)
                 panel.makeKey()
                 return
@@ -535,10 +535,22 @@ final class BreakOverlayManager {
         let isAlerting = appState?.phase == .alerting
         guard isMenuWindowMode || isAlerting else { return }
         if let panel = menuBarExtraPanel, panel.isVisible {
-            if panel.level != .floating { panel.level = .floating }
             return
         }
-        findMenuBarExtraPanel()
+        // Panel was lost or hidden — re-show without activating
+        guard let app = NSApp else { return }
+        for window in app.windows {
+            guard let panel = window as? NSPanel else { continue }
+            if panel is KeyablePanel { continue }
+            if panel.styleMask.contains(.nonactivatingPanel)
+                && panel.styleMask.contains(.fullSizeContentView)
+                && panel.frame.width < 350 {
+                menuBarExtraPanel = panel
+                panel.hidesOnDeactivate = false
+                panel.orderFrontRegardless()
+                return
+            }
+        }
     }
 
     private func unpinMenuBarExtra() {
@@ -546,7 +558,6 @@ final class BreakOverlayManager {
         menuPinTimer = nil
         if let panel = menuBarExtraPanel {
             panel.hidesOnDeactivate = originalHidesOnDeactivate ?? true
-            panel.level = originalPanelLevel ?? .statusBar
             panel.orderOut(nil)
         }
         menuBarExtraPanel = nil
@@ -676,15 +687,23 @@ final class BreakOverlayManager {
         let idle = getUserIdleSeconds()
         let gracePeriod = monitorStartTime.map { Date().timeIntervalSince($0) < 4 } ?? false
         let skipGrace = appState?.lastSkipClickTime.map { Date().timeIntervalSince($0) < 3 } ?? false
-        if idle < 3 && remaining > 0 && !gracePeriod && !skipGrace {
-            appState?.breakWarning = L.breakDetectedPause
+        let shouldWarn = idle < 3 && remaining > 0 && !gracePeriod && !skipGrace
+        if shouldWarn {
+            if appState?.breakWarning != L.breakDetectedPause {
+                appState?.breakWarning = L.breakDetectedPause
+            }
             appState?.playBreakDetectSound()
         } else {
-            appState?.breakWarning = ""
+            if appState?.breakWarning != "" {
+                appState?.breakWarning = ""
+            }
             remaining -= 1
         }
 
-        appState?.remainingSeconds = max(0, remaining)
+        let newRemaining = max(0, remaining)
+        if appState?.remainingSeconds != newRemaining {
+            appState?.remainingSeconds = newRemaining
+        }
 
         if remaining <= 0 {
             timer?.invalidate()
