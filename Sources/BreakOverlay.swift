@@ -532,7 +532,8 @@ final class BreakOverlayManager {
     }
 
     private func ensureMenuPinned() {
-        guard isMenuWindowMode else { return }
+        let isAlerting = appState?.phase == .alerting
+        guard isMenuWindowMode || isAlerting else { return }
         if let panel = menuBarExtraPanel, panel.isVisible {
             if panel.level != .floating { panel.level = .floating }
             return
