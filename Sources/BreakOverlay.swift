@@ -170,7 +170,7 @@ struct BreakCardView: View {
         .buttonStyle(.borderless)
         .padding(.top, 14)
 
-        Spacer().frame(height: 24)
+        Spacer().frame(height: 10)
     }
 
     // MARK: - Floating: Waiting
