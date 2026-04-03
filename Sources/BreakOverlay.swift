@@ -409,10 +409,38 @@ final class BreakOverlayManager {
     private var originalPanelLevel: NSWindow.Level?
     private var originalHidesOnDeactivate: Bool?
 
+    // Track current position for repositioning after screen changes
+    private var currentPosition: BreakPosition?
+    private var screenObservers: [NSObjectProtocol] = []
+
+    init() {
+        let wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification, object: nil, queue: nil
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.repositionWindows()
+            }
+        }
+        let screenObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: nil
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.repositionWindows()
+            }
+        }
+        screenObservers = [wakeObserver, screenObserver]
+    }
+
+    deinit {
+        NSWorkspace.shared.notificationCenter.removeObserver(screenObservers[0])
+        NotificationCenter.default.removeObserver(screenObservers[1])
+    }
+
     func show(seconds: Int) {
         remaining = seconds
         isMenuWindowMode = false
         let position = appState?.config.breakPosition ?? .topRight
+        currentPosition = position
         if position == .fullscreen {
             createFullscreen()
         } else {
@@ -438,6 +466,7 @@ final class BreakOverlayManager {
         windows.removeAll()
         unpinMenuBarExtra()
         isMenuWindowMode = false
+        currentPosition = nil
     }
 
     func hideAll() {
@@ -493,6 +522,43 @@ final class BreakOverlayManager {
             self?.appState?.phase = savedPhase ?? .working
             self?.appState?.remainingSeconds = savedRemaining ?? 0
             self?.appState?.breakWarning = savedWarning ?? ""
+        }
+    }
+
+    // MARK: - Reposition after screen change / wake
+
+    private func repositionWindows() {
+        guard !windows.isEmpty, let position = currentPosition else { return }
+
+        if position == .fullscreen {
+            // Recreate fullscreen panels to match current screen geometry
+            for w in windows { w.orderOut(nil) }
+            windows.removeAll()
+            createFullscreen()
+        } else {
+            // Reposition floating windows within current visibleFrame
+            guard let screen = NSScreen.main else { return }
+            let margin: CGFloat = 20
+            let vis = screen.visibleFrame
+
+            for w in windows {
+                let size = w.frame.size
+                var origin: NSPoint
+                switch position {
+                case .topRight:
+                    origin = NSPoint(x: vis.maxX - size.width - margin,
+                                     y: vis.maxY - size.height - margin)
+                case .topLeft:
+                    origin = NSPoint(x: vis.minX + margin,
+                                     y: vis.maxY - size.height - margin)
+                case .center:
+                    origin = NSPoint(x: vis.midX - size.width / 2,
+                                     y: vis.midY - size.height / 2)
+                case .fullscreen, .menuWindow:
+                    continue
+                }
+                w.setFrameOrigin(origin)
+            }
         }
     }
 

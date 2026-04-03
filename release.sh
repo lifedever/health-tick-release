@@ -70,6 +70,9 @@ git push gitee main --tags 2>/dev/null || echo "  Warning: failed to push to Git
 echo "[5/6] Publishing release to GitHub ${REPO}..."
 RELEASE_NOTES="## HealthTick ${TAG}
 
+### 更新内容
+- 修复了已知问题
+
 ### 下载
 - **Apple Silicon (M1/M2/M3/M4)**: \`HealthTick-${TAG}-Apple-Silicon.dmg\`
 - **Intel**: \`HealthTick-${TAG}-Intel.dmg\`
