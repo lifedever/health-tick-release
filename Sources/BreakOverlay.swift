@@ -624,7 +624,10 @@ final class BreakOverlayManager {
         menuPinTimer = nil
         if let panel = menuBarExtraPanel {
             panel.hidesOnDeactivate = originalHidesOnDeactivate ?? true
-            panel.orderOut(nil)
+            // Don't call panel.orderOut(nil) — it desyncs macOS's internal
+            // MenuBarExtra toggle state, causing clicks to be swallowed.
+            // Restoring hidesOnDeactivate is enough; the panel will dismiss
+            // naturally on the next user interaction or app deactivation.
         }
         menuBarExtraPanel = nil
         originalPanelLevel = nil
@@ -632,17 +635,10 @@ final class BreakOverlayManager {
     }
 
     private func closeMenuBarExtra() {
-        guard let app = NSApp else { return }
-        for window in app.windows {
-            guard let panel = window as? NSPanel else { continue }
-            if panel is KeyablePanel { continue }
-            if panel.styleMask.contains(.nonactivatingPanel),
-               panel.styleMask.contains(.fullSizeContentView),
-               panel.frame.width < 350 {
-                panel.orderOut(nil)
-                break
-            }
-        }
+        // Previously called panel.orderOut(nil), which desyncs macOS's
+        // MenuBarExtra toggle state. The panel will dismiss naturally
+        // through macOS's own state management when the user interacts
+        // elsewhere or the app deactivates.
     }
 
     // MARK: - Floating window (SwiftUI BreakCardView)
