@@ -470,8 +470,25 @@ final class BreakOverlayManager {
     }
 
     func hideAll() {
+        // Save panel ref before hide() clears it via unpinMenuBarExtra()
+        let panel = menuBarExtraPanel ?? findMenuBarPanel()
         hide()
-        closeMenuBarExtra()
+        // Directly dismiss the MenuBarExtra panel after confirmReturn().
+        if let panel, panel.isVisible {
+            panel.orderOut(nil)
+        }
+    }
+
+    /// Find the MenuBarExtra panel by searching app windows.
+    private func findMenuBarPanel() -> NSPanel? {
+        NSApp?.windows.first(where: { w in
+            w is NSPanel
+                && !(w is KeyablePanel)
+                && w.styleMask.contains(.nonactivatingPanel)
+                && w.styleMask.contains(.fullSizeContentView)
+                && w.frame.width < 350
+                && w.isVisible
+        }) as? NSPanel
     }
 
     func dismissMenuPanel() {
@@ -637,8 +654,7 @@ final class BreakOverlayManager {
     private func closeMenuBarExtra() {
         // Previously called panel.orderOut(nil), which desyncs macOS's
         // MenuBarExtra toggle state. The panel will dismiss naturally
-        // through macOS's own state management when the user interacts
-        // elsewhere or the app deactivates.
+        // through macOS's own state management when the app deactivates.
     }
 
     // MARK: - Floating window (SwiftUI BreakCardView)
