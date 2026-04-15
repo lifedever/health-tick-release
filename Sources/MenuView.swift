@@ -59,13 +59,6 @@ struct MenuView: View {
         .onAppear {
             menuBringOtherWindowsToFront()
         }
-        .onChange(of: state.phase) { _, _ in
-            // macOS 14: MenuBarExtra panel vibrancy background doesn't update
-            // when content height changes. Nudge the panel frame to force redraw.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                nudgeMenuBarExtraPanel()
-            }
-        }
     }
 }
 
@@ -427,26 +420,6 @@ private struct MenuControls: View {
 }
 
 // MARK: - File-level helpers (shared by sub-views)
-
-/// Nudge the MenuBarExtra panel frame by 1px to force macOS to recalculate
-/// the vibrancy background. Works around a macOS 14 bug where the
-/// NSVisualEffectView doesn't resize when SwiftUI content height changes.
-private func nudgeMenuBarExtraPanel() {
-    guard let panel = NSApp.windows.first(where: { w in
-        w is NSPanel
-        && w.styleMask.contains(.nonactivatingPanel)
-        && w.styleMask.contains(.fullSizeContentView)
-        && w.frame.width < 350
-        && w.isVisible
-    }) as? NSPanel else { return }
-    var f = panel.frame
-    f.size.height += 1
-    panel.setFrame(f, display: false)
-    DispatchQueue.main.async {
-        f.size.height -= 1
-        panel.setFrame(f, display: true)
-    }
-}
 
 private func menuDismissPanel() {
     // Panel will dismiss naturally when the newly-opened window activates
