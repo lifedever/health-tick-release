@@ -380,6 +380,18 @@ private class AutoResizingHostingView<Content: View>: NSHostingView<Content> {
     }
 }
 
+// MARK: - Screen helpers
+
+extension NSScreen {
+    /// Stable identifier across reboots and reconnects.
+    /// Built from CGDisplayCreateUUIDFromDisplayID — survives system restarts unlike CGDirectDisplayID.
+    var stableUUID: String? {
+        guard let did = deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID,
+              let cfUUID = CGDisplayCreateUUIDFromDisplayID(did)?.takeRetainedValue() else { return nil }
+        return CFUUIDCreateString(nil, cfUUID) as String?
+    }
+}
+
 // MARK: - Idle Detection
 
 func getUserIdleSeconds() -> Double {
@@ -447,6 +459,32 @@ final class BreakOverlayManager {
             createFloating(position: position)
         }
         startMonitoring()
+    }
+
+    // MARK: - Display target resolution
+
+    /// Returns the screen the mouse cursor is currently on, falling back to NSScreen.main.
+    private func activeScreen() -> NSScreen? {
+        let mouse = NSEvent.mouseLocation
+        return NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main
+    }
+
+    /// Returns the set of screens to overlay based on user's display-target config.
+    /// `.specific` with a missing/disconnected UUID silently falls back to active-screen behavior.
+    private func targetScreens() -> [NSScreen] {
+        let target = appState?.config.breakDisplayTarget ?? .activeScreen
+        switch target {
+        case .activeScreen:
+            return [activeScreen()].compactMap { $0 }
+        case .allScreens:
+            return NSScreen.screens
+        case .specific:
+            if let uuid = appState?.config.breakDisplaySpecificUUID,
+               let s = NSScreen.screens.first(where: { $0.stableUUID == uuid }) {
+                return [s]
+            }
+            return [activeScreen()].compactMap { $0 }
+        }
     }
 
     func showMenuWindow(seconds: Int) {
@@ -521,15 +559,19 @@ final class BreakOverlayManager {
         appState?.remainingSeconds = remaining
         appState?.breakWarning = ""
 
+        currentPosition = position
         if position == .menuWindow {
             isMenuWindowMode = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
                 self?.pinMenuBarExtra()
             }
-        } else if position == .fullscreen {
-            createFullscreen()
         } else {
-            createFloating(position: position)
+            isMenuWindowMode = false
+            if position == .fullscreen {
+                createFullscreen()
+            } else {
+                createFloating(position: position)
+            }
         }
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
@@ -547,36 +589,14 @@ final class BreakOverlayManager {
 
     private func repositionWindows() {
         guard !windows.isEmpty, let position = currentPosition else { return }
-
+        // Display topology may have changed (hot-plug, wake) — rebuild from scratch
+        // so window count matches the current target-screen set.
+        for w in windows { w.orderOut(nil) }
+        windows.removeAll()
         if position == .fullscreen {
-            // Recreate fullscreen panels to match current screen geometry
-            for w in windows { w.orderOut(nil) }
-            windows.removeAll()
             createFullscreen()
         } else {
-            // Reposition floating windows within current visibleFrame
-            guard let screen = NSScreen.main else { return }
-            let margin: CGFloat = 20
-            let vis = screen.visibleFrame
-
-            for w in windows {
-                let size = w.frame.size
-                var origin: NSPoint
-                switch position {
-                case .topRight:
-                    origin = NSPoint(x: vis.maxX - size.width - margin,
-                                     y: vis.maxY - size.height - margin)
-                case .topLeft:
-                    origin = NSPoint(x: vis.minX + margin,
-                                     y: vis.maxY - size.height - margin)
-                case .center:
-                    origin = NSPoint(x: vis.midX - size.width / 2,
-                                     y: vis.midY - size.height / 2)
-                case .fullscreen, .menuWindow:
-                    continue
-                }
-                w.setFrameOrigin(origin)
-            }
+            createFloating(position: position)
         }
     }
 
@@ -610,6 +630,7 @@ final class BreakOverlayManager {
                 panel.orderFrontRegardless()
                 NSApp.activate(ignoringOtherApps: true)
                 panel.makeKey()
+                repositionMenuPanelIfNeeded(panel)
                 return
             }
         }
@@ -619,6 +640,7 @@ final class BreakOverlayManager {
         let isAlerting = appState?.phase == .alerting
         guard isMenuWindowMode || isAlerting else { return }
         if let panel = menuBarExtraPanel, panel.isVisible {
+            // Don't reposition here — would make panel "follow the mouse" every 2s in active mode
             return
         }
         // Panel was lost or hidden — re-show without activating
@@ -632,9 +654,41 @@ final class BreakOverlayManager {
                 menuBarExtraPanel = panel
                 panel.hidesOnDeactivate = false
                 panel.orderFrontRegardless()
+                repositionMenuPanelIfNeeded(panel)
                 return
             }
         }
+    }
+
+    /// Move the menu-bar popover panel onto the configured target display.
+    /// Active/specific honored verbatim; "all displays" silently coerces to active
+    /// (the popover is a single panel and can't be on multiple screens).
+    private func repositionMenuPanelIfNeeded(_ panel: NSPanel) {
+        let target = appState?.config.breakDisplayTarget ?? .activeScreen
+        let screen: NSScreen?
+        switch target {
+        case .activeScreen, .allScreens:
+            screen = activeScreen()
+        case .specific:
+            if let uuid = appState?.config.breakDisplaySpecificUUID,
+               let s = NSScreen.screens.first(where: { $0.stableUUID == uuid }) {
+                screen = s
+            } else {
+                screen = activeScreen()
+            }
+        }
+        guard let screen, !panel.frame.isEmpty else { return }
+        // Skip if panel is already inside the target screen
+        if screen.frame.contains(panel.frame) { return }
+
+        let vis = screen.visibleFrame
+        let margin: CGFloat = 8
+        let size = panel.frame.size
+        let origin = NSPoint(
+            x: vis.maxX - size.width - margin,
+            y: vis.maxY - size.height - margin
+        )
+        panel.setFrameOrigin(origin)
     }
 
     private var outsideClickMonitor: Any?
@@ -687,62 +741,65 @@ final class BreakOverlayManager {
     // MARK: - Floating window (SwiftUI BreakCardView)
 
     private func createFloating(position: BreakPosition) {
-        guard let screen = NSScreen.main, let state = appState else { return }
+        guard let state = appState else { return }
+        let screens = targetScreens()
+        guard !screens.isEmpty else { return }
 
         let cornerRadius: CGFloat = 14
-
-        let cardView = BreakCardView()
-            .background(VisualEffectBackground())
-            .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
-            .shadow(color: .black.opacity(0.3), radius: 12, y: 4)
-            .environment(state)
-
-        let hostingView = AutoResizingHostingView(rootView: cardView)
-        let fitted = hostingView.fittingSize
-        let pw = ceil(fitted.width)
-        let ph = ceil(fitted.height)
-
         let margin: CGFloat = 20
-        let vis = screen.visibleFrame
 
-        let x: CGFloat
-        let y: CGFloat
-        switch position {
-        case .topRight:
-            x = vis.maxX - pw - margin
-            y = vis.maxY - ph - margin
-        case .topLeft:
-            x = vis.minX + margin
-            y = vis.maxY - ph - margin
-        case .center:
-            x = vis.midX - pw / 2
-            y = vis.midY - ph / 2
-        case .fullscreen, .menuWindow:
-            x = 0; y = 0
+        for screen in screens {
+            let cardView = BreakCardView()
+                .background(VisualEffectBackground())
+                .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
+                .shadow(color: .black.opacity(0.3), radius: 12, y: 4)
+                .environment(state)
+
+            let hostingView = AutoResizingHostingView(rootView: cardView)
+            let fitted = hostingView.fittingSize
+            let pw = ceil(fitted.width)
+            let ph = ceil(fitted.height)
+
+            let vis = screen.visibleFrame
+            let x: CGFloat
+            let y: CGFloat
+            switch position {
+            case .topRight:
+                x = vis.maxX - pw - margin
+                y = vis.maxY - ph - margin
+            case .topLeft:
+                x = vis.minX + margin
+                y = vis.maxY - ph - margin
+            case .center:
+                x = vis.midX - pw / 2
+                y = vis.midY - ph / 2
+            case .fullscreen, .menuWindow:
+                x = vis.minX; y = vis.minY
+            }
+
+            let p = KeyablePanel(
+                contentRect: NSMakeRect(x, y, pw, ph),
+                styleMask: [.borderless, .nonactivatingPanel],
+                backing: .buffered,
+                defer: false
+            )
+            p.level = .floating
+            p.isOpaque = false
+            p.backgroundColor = .clear
+            p.isMovableByWindowBackground = true
+            p.hasShadow = false
+            p.appearance = NSApp?.appearance ?? NSApp?.effectiveAppearance
+
+            hostingView.frame = NSMakeRect(0, 0, pw, ph)
+            hostingView.autoresizingMask = [.width, .height]
+            hostingView.wantsLayer = true
+            hostingView.layer?.cornerRadius = cornerRadius
+            hostingView.layer?.masksToBounds = true
+            p.contentView = hostingView
+
+            p.makeKeyAndOrderFront(nil)
+            windows.append(p)
         }
-
-        let p = KeyablePanel(
-            contentRect: NSMakeRect(x, y, pw, ph),
-            styleMask: [.borderless, .nonactivatingPanel],
-            backing: .buffered,
-            defer: false
-        )
-        p.level = .floating
-        p.isOpaque = false
-        p.backgroundColor = .clear
-        p.isMovableByWindowBackground = true
-        p.hasShadow = false
-        p.appearance = NSApp?.appearance ?? NSApp?.effectiveAppearance
-
-        hostingView.frame = NSMakeRect(0, 0, pw, ph)
-        hostingView.autoresizingMask = [.width, .height]
-        hostingView.wantsLayer = true
-        hostingView.layer?.cornerRadius = cornerRadius
-        hostingView.layer?.masksToBounds = true
-        p.contentView = hostingView
-
-        p.makeKeyAndOrderFront(nil)
-        windows.append(p)
     }
 
     // MARK: - Fullscreen (SwiftUI BreakCardView on dark background)
@@ -750,7 +807,7 @@ final class BreakOverlayManager {
     private func createFullscreen() {
         guard let state = appState else { return }
 
-        for screen in NSScreen.screens {
+        for screen in targetScreens() {
             let frame = screen.frame
             let p = KeyablePanel(
                 contentRect: frame,

@@ -20,6 +20,20 @@ enum BreakPosition: String, CaseIterable, Equatable {
     }
 }
 
+enum BreakDisplayTarget: String, CaseIterable, Equatable {
+    case activeScreen = "active"
+    case allScreens = "all"
+    case specific = "specific"
+
+    var label: String {
+        switch self {
+        case .activeScreen: return L.displayTargetActive
+        case .allScreens: return L.displayTargetAll
+        case .specific: return L.displayTargetSpecific
+        }
+    }
+}
+
 enum AppAppearance: String, CaseIterable, Equatable {
     case system = "system"
     case light = "light"
@@ -169,6 +183,8 @@ struct AppConfig: Equatable {
     var soundEnabled: Bool = true
     var breakDetectSound: Bool = false
     var breakPosition: BreakPosition = .menuWindow
+    var breakDisplayTarget: BreakDisplayTarget = .activeScreen
+    var breakDisplaySpecificUUID: String? = nil
     var breakConfirm: Bool = true
     var alertSound: String = "Glass"
     var breakDetectSoundName: String = "Tink"

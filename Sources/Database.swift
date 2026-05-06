@@ -121,6 +121,8 @@ final class Database {
                 case "sound_enabled": config.soundEnabled = value == "1"
                 case "break_detect_sound": config.breakDetectSound = value == "1"
                 case "break_position": config.breakPosition = BreakPosition(rawValue: value) ?? .menuWindow
+                case "break_display_target": config.breakDisplayTarget = BreakDisplayTarget(rawValue: value) ?? .activeScreen
+                case "break_display_specific_uuid": config.breakDisplaySpecificUUID = value.isEmpty ? nil : value
                 case "break_confirm": config.breakConfirm = value == "1"
                 case "alert_sound": config.alertSound = value
                 case "break_detect_sound_name": config.breakDetectSoundName = value
@@ -179,6 +181,8 @@ final class Database {
         exec("INSERT OR REPLACE INTO config (key, value) VALUES ('sound_enabled', '\(config.soundEnabled ? "1" : "0")')")
         exec("INSERT OR REPLACE INTO config (key, value) VALUES ('break_detect_sound', '\(config.breakDetectSound ? "1" : "0")')")
         exec("INSERT OR REPLACE INTO config (key, value) VALUES ('break_position', '\(config.breakPosition.rawValue)')")
+        exec("INSERT OR REPLACE INTO config (key, value) VALUES ('break_display_target', '\(config.breakDisplayTarget.rawValue)')")
+        exec("INSERT OR REPLACE INTO config (key, value) VALUES ('break_display_specific_uuid', '\(config.breakDisplaySpecificUUID ?? "")')")
         exec("INSERT OR REPLACE INTO config (key, value) VALUES ('break_confirm', '\(config.breakConfirm ? "1" : "0")')")
         exec("INSERT OR REPLACE INTO config (key, value) VALUES ('alert_sound', '\(config.alertSound)')")
         exec("INSERT OR REPLACE INTO config (key, value) VALUES ('break_detect_sound_name', '\(config.breakDetectSoundName)')")

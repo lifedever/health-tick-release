@@ -70,6 +70,16 @@ struct L {
     static var posFullscreen: String { isZh ? "全屏强制" : "Fullscreen" }
     static var posMenuWindow: String { isZh ? "主窗口提醒" : "Menu Window" }
 
+    // MARK: - Break Display Target
+    static var displayTargetLabel: String { isZh ? "提醒所在屏幕" : "Reminder Screen" }
+    static var displayTargetActive: String { isZh ? "活动的显示器" : "Active display" }
+    static var displayTargetAll: String { isZh ? "全部显示器" : "All displays" }
+    static var displayTargetSpecific: String { isZh ? "指定显示器" : "Specific display" }
+    static func displayTargetDisconnected(_ name: String) -> String {
+        isZh ? "已断开（\(name)）" : "Disconnected (\(name))"
+    }
+    static var displayTargetUnknownName: String { isZh ? "未知显示器" : "Unknown display" }
+
     // MARK: - Break Overlay
     static var breakTimeTitle: String { isZh ? "休息时间" : "Break Time" }
     static var breakLeaveMsg: String { isZh ? "请离开电脑，起来走走" : "Please leave the computer and take a walk" }

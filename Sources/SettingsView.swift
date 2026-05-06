@@ -1,5 +1,6 @@
 import SwiftUI
 import ServiceManagement
+import AppKit
 
 private enum SettingsTab: Hashable {
     case system, app, breakTab, reminders, about
@@ -720,6 +721,8 @@ struct BreakTab: View {
                     .buttonStyle(.borderless)
                 }
                 Divider().padding(.leading, 44)
+                displayTargetRow
+                Divider().padding(.leading, 44)
                 toggleRow(icon: "hand.raised.fill", label: L.breakConfirm, isOn: $state.config.breakConfirm)
                     .opacity(state.config.eyeCareMode ? 0.5 : 1.0)
                     .disabled(state.config.eyeCareMode)
@@ -746,6 +749,89 @@ struct BreakTab: View {
             .background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 10))
         }
         .padding(16)
+    }
+
+    @ViewBuilder
+    private var displayTargetRow: some View {
+        @Bindable var state = state
+        // macOS MenuBarExtra is a system singleton — "all displays" can't be
+        // honored in menu mode, so hide that option there.
+        let isMenuMode = state.config.breakPosition == .menuWindow
+        let availableTargets: [BreakDisplayTarget] = isMenuMode
+            ? [.activeScreen, .specific]
+            : BreakDisplayTarget.allCases
+
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                Image(systemName: "display.2")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 20)
+                Text(L.displayTargetLabel)
+                    .font(.callout)
+                Spacer()
+                Picker("", selection: $state.config.breakDisplayTarget) {
+                    ForEach(availableTargets, id: \.self) { t in
+                        Text(t.label).tag(t)
+                    }
+                }
+                .labelsHidden()
+                .fixedSize()
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 6)
+
+            if state.config.breakDisplayTarget == .specific {
+                specificDisplayPicker
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 6)
+            }
+        }
+        .onChange(of: state.config.breakPosition) { _, newPos in
+            // Switching INTO menu mode while "all" is selected → coerce to active
+            if newPos == .menuWindow && state.config.breakDisplayTarget == .allScreens {
+                state.config.breakDisplayTarget = .activeScreen
+            }
+        }
+        .onAppear {
+            // Repair any pre-existing invalid combo from earlier versions / DB
+            if isMenuMode && state.config.breakDisplayTarget == .allScreens {
+                state.config.breakDisplayTarget = .activeScreen
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var specificDisplayPicker: some View {
+        @Bindable var state = state
+        let screens = NSScreen.screens
+        let savedUUID = state.config.breakDisplaySpecificUUID
+        let savedConnected = savedUUID.map { uuid in
+            screens.contains { $0.stableUUID == uuid }
+        } ?? false
+
+        HStack(spacing: 10) {
+            Spacer()
+            Picker("", selection: Binding<String>(
+                get: { savedUUID ?? screens.first?.stableUUID ?? "" },
+                set: { state.config.breakDisplaySpecificUUID = $0.isEmpty ? nil : $0 }
+            )) {
+                ForEach(screens, id: \.stableUUID) { screen in
+                    Text(screenDisplayName(screen)).tag(screen.stableUUID ?? "")
+                }
+                if let uuid = savedUUID, !savedConnected {
+                    Text(L.displayTargetDisconnected(String(uuid.prefix(8))))
+                        .tag(uuid)
+                }
+            }
+            .labelsHidden()
+            .fixedSize()
+        }
+    }
+
+    private func screenDisplayName(_ screen: NSScreen) -> String {
+        let name = screen.localizedName
+        return name.isEmpty ? L.displayTargetUnknownName : name
     }
 
     @ViewBuilder
