@@ -75,6 +75,7 @@ final class Database {
             ("break_position", "menu_window"),
             ("break_confirm", "1"),
             ("alert_sound", "Glass"),
+            ("alert_sound_repeat_count", "3"),
             ("break_detect_sound_name", "Tink"),
             ("language", "system"),
             ("appearance", "system"),
@@ -125,6 +126,8 @@ final class Database {
                 case "break_display_specific_uuid": config.breakDisplaySpecificUUID = value.isEmpty ? nil : value
                 case "break_confirm": config.breakConfirm = value == "1"
                 case "alert_sound": config.alertSound = value
+                case "alert_sound_repeat_count":
+                    config.alertSoundRepeatCount = min(max(Int(value) ?? 3, 1), 10)
                 case "break_detect_sound_name": config.breakDetectSoundName = value
                 case "language": config.language = AppLanguage(rawValue: value) ?? .system
                 case "appearance": config.appearance = AppAppearance(rawValue: value) ?? .system
@@ -138,6 +141,19 @@ final class Database {
                        let arr = try? JSONDecoder().decode(Set<Int>.self, from: data) {
                         config.workDays = arr
                     }
+                case "holiday_sync_enabled": config.holidaySyncEnabled = value == "1"
+                case "holiday_calendar":
+                    if let data = value.data(using: .utf8),
+                       let map = try? JSONDecoder().decode([String: Bool].self, from: data) {
+                        config.holidayCalendar = map
+                    }
+                case "holiday_calendar_names":
+                    if let data = value.data(using: .utf8),
+                       let map = try? JSONDecoder().decode([String: String].self, from: data) {
+                        config.holidayCalendarNames = map
+                    }
+                case "holiday_calendar_synced_at":
+                    config.holidayCalendarSyncedAt = value.isEmpty ? nil : value
                 case "work_hours_enabled": config.workHoursEnabled = value == "1"
                 case "work_start_time": config.workStartTime = value
                 case "work_end_time": config.workEndTime = value
@@ -185,6 +201,7 @@ final class Database {
         exec("INSERT OR REPLACE INTO config (key, value) VALUES ('break_display_specific_uuid', '\(config.breakDisplaySpecificUUID ?? "")')")
         exec("INSERT OR REPLACE INTO config (key, value) VALUES ('break_confirm', '\(config.breakConfirm ? "1" : "0")')")
         exec("INSERT OR REPLACE INTO config (key, value) VALUES ('alert_sound', '\(config.alertSound)')")
+        exec("INSERT OR REPLACE INTO config (key, value) VALUES ('alert_sound_repeat_count', '\(min(max(config.alertSoundRepeatCount, 1), 10))')")
         exec("INSERT OR REPLACE INTO config (key, value) VALUES ('break_detect_sound_name', '\(config.breakDetectSoundName)')")
         exec("INSERT OR REPLACE INTO config (key, value) VALUES ('language', '\(config.language.rawValue)')")
         exec("INSERT OR REPLACE INTO config (key, value) VALUES ('appearance', '\(config.appearance.rawValue)')")
@@ -194,6 +211,14 @@ final class Database {
         let workDaysJSON = (try? JSONEncoder().encode(config.workDays))
             .flatMap { String(data: $0, encoding: .utf8) } ?? "[2,3,4,5,6]"
         exec("INSERT OR REPLACE INTO config (key, value) VALUES ('work_days', '\(workDaysJSON)')")
+        exec("INSERT OR REPLACE INTO config (key, value) VALUES ('holiday_sync_enabled', '\(config.holidaySyncEnabled ? "1" : "0")')")
+        let holidayJSON = (try? JSONEncoder().encode(config.holidayCalendar))
+            .flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+        exec("INSERT OR REPLACE INTO config (key, value) VALUES ('holiday_calendar', '\(holidayJSON.replacingOccurrences(of: "'", with: "''"))')")
+        let holidayNamesJSON = (try? JSONEncoder().encode(config.holidayCalendarNames))
+            .flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+        exec("INSERT OR REPLACE INTO config (key, value) VALUES ('holiday_calendar_names', '\(holidayNamesJSON.replacingOccurrences(of: "'", with: "''"))')")
+        exec("INSERT OR REPLACE INTO config (key, value) VALUES ('holiday_calendar_synced_at', '\(config.holidayCalendarSyncedAt ?? "")')")
         exec("INSERT OR REPLACE INTO config (key, value) VALUES ('long_break_enabled', '\(config.longBreakEnabled ? "1" : "0")')")
         exec("INSERT OR REPLACE INTO config (key, value) VALUES ('long_break_interval', '\(config.longBreakInterval)')")
         exec("INSERT OR REPLACE INTO config (key, value) VALUES ('long_break_seconds', '\(config.longBreakSeconds)')")

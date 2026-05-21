@@ -134,6 +134,10 @@ struct L {
     static var breakConfirm: String { isZh ? "休息前确认" : "Confirm Before Break" }
     static var autoPauseOnGoal: String { isZh ? "完成目标后自动停止" : "Auto-stop When Goal Met" }
     static var reminderSound: String { isZh ? "提醒声音" : "Reminder Sound" }
+    static var alertSoundRepeatCount: String { isZh ? "连续播放" : "Repeat" }
+    static func alertSoundRepeatTimes(_ count: Int) -> String {
+        isZh ? "\(count) 次" : "\(count)×"
+    }
     static var activityDetectSound: String { isZh ? "操作检测提示音" : "Activity Detection Sound" }
     static var alertSoundLabel: String { isZh ? "提醒声音" : "Alert Sound" }
     static var detectSoundLabel: String { isZh ? "检测提示音" : "Detection Sound" }
@@ -326,7 +330,9 @@ struct L {
     static var helpFeatureBreakPosTitle: String { isZh ? "休息窗口位置" : "Break Window Position" }
     static var helpFeatureBreakConfirm: String { isZh ? "开启后，工作结束需手动确认才进入休息；关闭则自动进入休息倒计时。" : "When enabled, you must confirm before entering break. When disabled, break starts automatically." }
     static var helpFeatureBreakConfirmTitle: String { isZh ? "休息确认" : "Break Confirmation" }
-    static var helpFeatureSound: String { isZh ? "工作结束时播放提示音。" : "Plays a sound when work time ends." }
+    static var helpFeatureSound: String {
+        isZh ? "工作结束时播放提示音，可设置连续播放次数（默认 3 次）。" : "Plays a sound when work time ends; set how many times it repeats (default 3)."
+    }
     static var helpFeatureSoundTitle: String { isZh ? "提醒声音" : "Reminder Sound" }
     static var helpFeatureDetectSound: String { isZh ? "休息期间检测到操作时播放提示音，提醒你停下来。" : "Plays a sound when activity is detected during break, reminding you to stop." }
     static var helpFeatureDetectSoundTitle: String { isZh ? "操作检测提示音" : "Activity Detection Sound" }
@@ -388,6 +394,41 @@ struct L {
     static var quietWeekdaysAll: String { isZh ? "每天" : "Every day" }
     static var quietSpecifyDays: String { isZh ? "指定日期" : "Specify days" }
     static var workDays: String { isZh ? "工作日" : "Work Days" }
+    static var holidaySync: String { isZh ? "同步国家节假日" : "Sync National Holidays" }
+    static var holidaySyncDesc: String {
+        isZh
+            ? "开启后按国务院公布的放假与调休安排判断工作日；未在节假日表中的日期仍按下方星期设置。需联网同步数据。"
+            : "When enabled, work days follow China's official holiday and make-up workday schedule. Dates not in the synced calendar still use the weekday selection below. Requires network to sync."
+    }
+    static var holidaySyncNow: String { isZh ? "立即同步" : "Sync Now" }
+    static var holidaySyncing: String { isZh ? "同步中…" : "Syncing…" }
+    static var holidaySyncLast: String { isZh ? "上次同步" : "Last synced" }
+    static var holidaySyncNever: String { isZh ? "尚未同步" : "Not synced yet" }
+    static var holidaySyncErrorNetwork: String { isZh ? "网络错误，请检查连接后重试" : "Network error. Check your connection and try again." }
+    static var holidaySyncErrorAPI: String { isZh ? "节假日数据获取失败，请稍后重试" : "Could not fetch holiday data. Please try again later." }
+    static var holidaySyncErrorInvalid: String { isZh ? "无效的请求地址" : "Invalid request URL" }
+    static var holidayWeekdayFallback: String { isZh ? "默认工作日（节假日表未覆盖的日期）" : "Default workdays (dates not in holiday calendar)" }
+    static var holidayViewCalendar: String { isZh ? "查看节假日日历" : "View Holiday Calendar" }
+    static var holidayCalendarTitle: String { isZh ? "国家节假日安排" : "National Holiday Calendar" }
+    static var holidayCalendarEmpty: String { isZh ? "请先同步节假日数据" : "Sync holiday data first" }
+    static var holidayKindRest: String { isZh ? "放假" : "Holiday off" }
+    static var holidayKindMakeup: String { isZh ? "调休上班" : "Make-up workday" }
+    static var holidayKindDefaultWork: String { isZh ? "工作日" : "Workday" }
+    static var holidayKindDefaultOff: String { isZh ? "休息日" : "Day off" }
+    static var holidayCountsAsWork: String { isZh ? "计入工作日" : "Counts as workday" }
+    static var holidayCountsAsOff: String { isZh ? "不计入工作日" : "Not a workday" }
+    static var holidayInOfficialSchedule: String { isZh ? "国务院安排" : "Official schedule" }
+    static var holidayByWeekday: String { isZh ? "按星期设置" : "By weekday setting" }
+    static func holidayMonthTitle(year: Int, month: Int) -> String {
+        if isZh { return "\(year)年\(month)月" }
+        let fmt = DateFormatter()
+        fmt.locale = Locale(identifier: "en_US")
+        let comps = DateComponents(year: year, month: month, day: 1)
+        let cal = Calendar(identifier: .gregorian)
+        guard let date = cal.date(from: comps) else { return "\(month)/\(year)" }
+        fmt.dateFormat = "MMMM yyyy"
+        return fmt.string(from: date)
+    }
     static var monday: String { isZh ? "一" : "Mon" }
     static var tuesday: String { isZh ? "二" : "Tue" }
     static var wednesday: String { isZh ? "三" : "Wed" }

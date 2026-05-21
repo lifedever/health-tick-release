@@ -187,11 +187,16 @@ struct AppConfig: Equatable {
     var breakDisplaySpecificUUID: String? = nil
     var breakConfirm: Bool = true
     var alertSound: String = "Glass"
+    var alertSoundRepeatCount: Int = 3
     var breakDetectSoundName: String = "Tink"
     var language: AppLanguage = .system
     var appearance: AppAppearance = .system
     var quietHours: [QuietHourPeriod] = []
     var workDays: Set<Int> = [2, 3, 4, 5, 6]  // Calendar weekday: 2=Mon...6=Fri
+    var holidaySyncEnabled: Bool = false
+    var holidayCalendar: [String: Bool] = [:]  // "yyyy-MM-dd" (China) → is work day
+    var holidayCalendarNames: [String: String] = [:]  // "yyyy-MM-dd" → holiday name
+    var holidayCalendarSyncedAt: String? = nil  // ISO8601
     var workHoursEnabled: Bool = false
     var workStartTime: String = "09:00"
     var workEndTime: String = "18:00"
@@ -308,7 +313,7 @@ final class AppState {
     private var pausedRemaining: Int = 0
     private var pausedPhase: AppPhase?
     private var timer: Timer?
-    private var alertRepeatTimer: Timer?
+    private var alertSoundBurstToken = UUID()
     private var quietCheckTimer: Timer?
     private var quietCountdownTimer: Timer?
     private var autoQuietPaused: Bool = false
@@ -505,7 +510,7 @@ final class AppState {
 
     private func onWorkDone() {
         currentReminder = config.reminders.randomElement() ?? L.defaultBreakReminder
-        playSound()
+        playAlertSound()
 
         if config.breakConfirm {
             phase = .alerting
@@ -518,8 +523,7 @@ final class AppState {
     }
 
     func confirmBreak() {
-        alertRepeatTimer?.invalidate()
-        alertRepeatTimer = nil
+        cancelAlertSoundBurst()
         overlayManager.dismissMenuPanel()
         startBreak()
     }
@@ -631,7 +635,7 @@ final class AppState {
     func manualBreak() {
         guard phase == .working else { return }
         timer?.invalidate()
-        alertRepeatTimer?.invalidate()
+        cancelAlertSoundBurst()
 
         // End current work session so worked time is recorded
         if let sid = currentSessionId {
@@ -643,7 +647,7 @@ final class AppState {
 
     func reset() {
         timer?.invalidate()
-        alertRepeatTimer?.invalidate()
+        cancelAlertSoundBurst()
         overlayManager.hide()
         pausedPhase = nil
         autoQuietPaused = false
@@ -673,7 +677,7 @@ final class AppState {
         guard phase != .paused else { return }
 
         timer?.invalidate()
-        alertRepeatTimer?.invalidate()
+        cancelAlertSoundBurst()
         overlayManager.hide()
 
         if let sid = currentSessionId {
@@ -831,6 +835,9 @@ final class AppState {
         }
 
         if newConfig.quietHours != old.quietHours || newConfig.workDays != old.workDays ||
+           newConfig.holidaySyncEnabled != old.holidaySyncEnabled ||
+           newConfig.holidayCalendar != old.holidayCalendar ||
+           newConfig.holidayCalendarNames != old.holidayCalendarNames ||
            newConfig.workHoursEnabled != old.workHoursEnabled ||
            newConfig.workStartTime != old.workStartTime ||
            newConfig.workEndTime != old.workEndTime {
@@ -850,7 +857,7 @@ final class AppState {
         lastSavedConfig = config
         L.lang = config.language
         timer?.invalidate()
-        alertRepeatTimer?.invalidate()
+        cancelAlertSoundBurst()
         overlayManager.hide()
         pausedPhase = nil
         // Close current session so its work time is not lost
@@ -864,7 +871,7 @@ final class AppState {
 
     func restartCurrentPhase() {
         timer?.invalidate()
-        alertRepeatTimer?.invalidate()
+        cancelAlertSoundBurst()
         overlayManager.hide()
         pausedPhase = nil
         // Close current session so its work time is not lost
@@ -924,6 +931,54 @@ final class AppState {
         allBadges.first(where: { maxStreak < $0.days })
     }
 
+    private static let alertSoundRepeatInterval: TimeInterval = 0.5
+
+    private func cancelAlertSoundBurst() {
+        alertSoundBurstToken = UUID()
+    }
+
+    /// Reminder sound when work ends; plays `alertSoundRepeatCount` times with a short gap.
+    func playAlertSound() {
+        guard config.soundEnabled else { return }
+        playSoundBurst(
+            soundName: config.alertSound,
+            repeatCount: config.alertSoundRepeatCount,
+            requireSoundEnabled: true
+        )
+    }
+
+    /// Settings preview: always plays the given sound/count (row toggle already on).
+    func previewSoundBurst(soundName: String, repeatCount: Int) {
+        playSoundBurst(soundName: soundName, repeatCount: repeatCount, requireSoundEnabled: false)
+    }
+
+    private func playSoundBurst(soundName: String, repeatCount: Int, requireSoundEnabled: Bool) {
+        if requireSoundEnabled && !config.soundEnabled { return }
+        cancelAlertSoundBurst()
+        let token = alertSoundBurstToken
+        let count = min(max(repeatCount, 1), 10)
+
+        for index in 0..<count {
+            let delay = Self.alertSoundRepeatInterval * TimeInterval(index)
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self, self.alertSoundBurstToken == token else { return }
+                if requireSoundEnabled && !self.config.soundEnabled { return }
+                self.playSoundOnce(soundName: soundName)
+            }
+        }
+    }
+
+    /// Each play uses a fresh NSSound instance — `NSSound(named:)` is shared and rapid replays can be dropped.
+    private func playSoundOnce(soundName: String) {
+        let path = "/System/Library/Sounds/\(soundName).aiff"
+        if FileManager.default.fileExists(atPath: path),
+           let sound = NSSound(contentsOf: URL(fileURLWithPath: path), byReference: false) {
+            sound.play()
+        } else {
+            NSSound(named: soundName)?.play()
+        }
+    }
+
     func playSound(_ name: String? = nil) {
         guard config.soundEnabled else { return }
         NSSound(named: name ?? config.alertSound)?.play()
@@ -945,8 +1000,7 @@ final class AppState {
     func forceEndBreak() {
         guard phase == .breaking else { return }
         timer?.invalidate()
-        alertRepeatTimer?.invalidate()
-        alertRepeatTimer = nil
+        cancelAlertSoundBurst()
         breakWarning = ""
         overlayManager.hide()
 
@@ -973,8 +1027,7 @@ final class AppState {
 
         // 1. Stop all timers
         timer?.invalidate()
-        alertRepeatTimer?.invalidate()
-        alertRepeatTimer = nil
+        cancelAlertSoundBurst()
 
         // 2. Dismiss all overlays immediately
         overlayManager.hideAll()
@@ -1042,12 +1095,10 @@ final class AppState {
 
     /// Compute a set of string identifiers for all currently active quiet reasons.
     private func currentActiveQuietReasons() -> Set<String> {
-        let cal = Calendar.current
         let now = Date()
-        let weekday = cal.component(.weekday, from: now)
         var reasons: Set<String> = []
 
-        if !config.workDays.contains(weekday) {
+        if !config.isWorkDay(at: now) {
             reasons.insert("non_work_day")
         }
         for period in config.quietHours where period.isActive(at: now) {
@@ -1090,8 +1141,7 @@ final class AppState {
             if phase == .breaking {
                 // End break cleanly without creating a new session
                 timer?.invalidate()
-                alertRepeatTimer?.invalidate()
-                alertRepeatTimer = nil
+                cancelAlertSoundBurst()
                 breakWarning = ""
                 overlayManager.hide()
                 let actualSeconds: Int?
@@ -1108,8 +1158,7 @@ final class AppState {
                 autoQuietPaused = true
             }
             if phase == .alerting {
-                alertRepeatTimer?.invalidate()
-                alertRepeatTimer = nil
+                cancelAlertSoundBurst()
                 overlayManager.hideAll()
                 phase = .paused
                 autoQuietPaused = true
@@ -1189,8 +1238,7 @@ final class AppState {
         }
 
         // Check non-work day — ends at midnight
-        let weekday = cal.component(.weekday, from: now)
-        if !config.workDays.contains(weekday) {
+        if !config.isWorkDay(at: now) {
             if let tomorrow = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: now)) {
                 endDates.append(tomorrow)
             }

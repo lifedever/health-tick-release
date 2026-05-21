@@ -371,6 +371,9 @@ struct AppTab: View {
     @State private var showQuietHelp = false
     @State private var expandedQuietId: UUID? = nil
     @State private var showWorkHoursHelp = false
+    @State private var isSyncingHolidays = false
+    @State private var holidaySyncError: String?
+    @State private var showHolidayCalendar = false
 
     var body: some View {
         @Bindable var state = state
@@ -520,6 +523,82 @@ struct AppTab: View {
                         }
                         .padding(.horizontal, 14)
 
+                        HStack(spacing: 10) {
+                            Image(systemName: "flag.fill")
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                                .frame(width: 20)
+                            Text(L.holidaySync)
+                                .font(.callout)
+                            Spacer()
+                            Toggle("", isOn: Binding(
+                                get: { state.config.holidaySyncEnabled },
+                                set: { enabled in
+                                    state.config.holidaySyncEnabled = enabled
+                                    if enabled && state.config.holidayCalendar.isEmpty {
+                                        syncNationalHolidays()
+                                    }
+                                }
+                            ))
+                            .labelsHidden()
+                            .toggleStyle(.switch)
+                            .tint(.green)
+                        }
+                        .padding(.horizontal, 14)
+
+                        if state.config.holidaySyncEnabled {
+                            Text(L.holidaySyncDesc)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 14)
+
+                            HStack(spacing: 8) {
+                                Button {
+                                    syncNationalHolidays()
+                                } label: {
+                                    if isSyncingHolidays {
+                                        HStack(spacing: 6) {
+                                            ProgressView().controlSize(.small)
+                                            Text(L.holidaySyncing)
+                                        }
+                                    } else {
+                                        Text(L.holidaySyncNow)
+                                    }
+                                }
+                                .buttonStyle(.bordered)
+                                .disabled(isSyncingHolidays)
+
+                                Button {
+                                    showHolidayCalendar = true
+                                } label: {
+                                    Text(L.holidayViewCalendar)
+                                }
+                                .buttonStyle(.bordered)
+                                .disabled(state.config.holidayCalendar.isEmpty)
+
+                                Text(holidaySyncStatusText)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Spacer()
+                            }
+                            .padding(.horizontal, 14)
+
+                            if let holidaySyncError {
+                                Text(holidaySyncError)
+                                    .font(.caption)
+                                    .foregroundStyle(.red)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.horizontal, 14)
+                            }
+
+                            Text(L.holidayWeekdayFallback)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 14)
+                        }
+
                         HStack(spacing: 6) {
                             ForEach([2, 3, 4, 5, 6, 7, 1], id: \.self) { day in
                                 Button {
@@ -542,6 +621,7 @@ struct AppTab: View {
                             }
                         }
                         .padding(.horizontal, 14)
+                        .opacity(state.config.holidaySyncEnabled ? 0.85 : 1)
                     }
                     .padding(.vertical, 10)
 
@@ -674,6 +754,44 @@ struct AppTab: View {
         } message: {
             Text(L.durationChangedMsg)
         }
+        .sheet(isPresented: $showHolidayCalendar) {
+            HolidayCalendarView()
+                .environment(state)
+        }
+    }
+
+    private var holidaySyncStatusText: String {
+        guard let synced = state.config.holidayCalendarSyncedAt,
+              let date = ISO8601DateFormatter().date(from: synced) else {
+            return L.holidaySyncNever
+        }
+        let fmt = DateFormatter()
+        fmt.dateStyle = .short
+        fmt.timeStyle = .short
+        return "\(L.holidaySyncLast): \(fmt.string(from: date))"
+    }
+
+    private func syncNationalHolidays() {
+        guard !isSyncingHolidays else { return }
+        isSyncingHolidays = true
+        holidaySyncError = nil
+        Task {
+            do {
+                let result = try await HolidayCalendarService.syncNationalHolidays()
+                await MainActor.run {
+                    state.config.holidayCalendar = result.workDayOverrides
+                    state.config.holidayCalendarNames = result.labels
+                    state.config.holidayCalendarSyncedAt = ISO8601DateFormatter().string(from: Date())
+                    isSyncingHolidays = false
+                    showHolidayCalendar = true
+                }
+            } catch {
+                await MainActor.run {
+                    holidaySyncError = error.localizedDescription
+                    isSyncingHolidays = false
+                }
+            }
+        }
     }
 
     private func sliderRow(icon: String, label: String, value: Binding<Double>, range: ClosedRange<Double>, unit: String, color: Color) -> some View {
@@ -733,7 +851,8 @@ struct BreakTab: View {
                     icon: "speaker.wave.2.fill",
                     label: L.reminderSound,
                     isOn: $state.config.soundEnabled,
-                    sound: $state.config.alertSound
+                    sound: $state.config.alertSound,
+                    repeatCount: $state.config.alertSoundRepeatCount
                 )
                 Divider().padding(.leading, 44)
                 soundRow(
@@ -874,7 +993,13 @@ struct BreakTab: View {
         .padding(.vertical, 6)
     }
 
-    private func soundRow(icon: String, label: String, isOn: Binding<Bool>, sound: Binding<String>) -> some View {
+    private func soundRow(
+        icon: String,
+        label: String,
+        isOn: Binding<Bool>,
+        sound: Binding<String>,
+        repeatCount: Binding<Int>? = nil
+    ) -> some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
                 Image(systemName: icon)
@@ -904,7 +1029,14 @@ struct BreakTab: View {
                     .fixedSize()
 
                     Button {
-                        NSSound(named: sound.wrappedValue)?.play()
+                        if let repeatCount {
+                            self.state.previewSoundBurst(
+                                soundName: sound.wrappedValue,
+                                repeatCount: repeatCount.wrappedValue
+                            )
+                        } else {
+                            NSSound(named: sound.wrappedValue)?.play()
+                        }
                     } label: {
                         Image(systemName: "play.circle.fill")
                             .font(.system(size: 16))
@@ -916,7 +1048,25 @@ struct BreakTab: View {
                     Spacer()
                 }
                 .padding(.horizontal, 14)
-                .padding(.bottom, 6)
+                .padding(.bottom, repeatCount == nil ? 6 : 0)
+
+                if let repeatCount {
+                    HStack(spacing: 10) {
+                        Spacer().frame(width: 20)
+                        Text(L.alertSoundRepeatCount)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Stepper(
+                            L.alertSoundRepeatTimes(repeatCount.wrappedValue),
+                            value: repeatCount,
+                            in: 1...10
+                        )
+                        .fixedSize()
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 6)
+                }
             }
         }
     }
