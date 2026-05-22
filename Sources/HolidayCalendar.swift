@@ -74,6 +74,8 @@ enum HolidayCalendarService {
         return cal
     }
 
+    static let iso8601: ISO8601DateFormatter = ISO8601DateFormatter()
+
     private static func fetchYear(_ year: Int) async throws -> HolidaySyncResult {
         guard let url = URL(string: "\(apiBase)/\(year)") else {
             throw HolidayCalendarError.invalidURL

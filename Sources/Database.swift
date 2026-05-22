@@ -75,7 +75,7 @@ final class Database {
             ("break_position", "menu_window"),
             ("break_confirm", "1"),
             ("alert_sound", "Glass"),
-            ("alert_sound_repeat_count", "3"),
+            ("alert_sound_repeat_count", "1"),
             ("break_detect_sound_name", "Tink"),
             ("language", "system"),
             ("appearance", "system"),
@@ -127,7 +127,7 @@ final class Database {
                 case "break_confirm": config.breakConfirm = value == "1"
                 case "alert_sound": config.alertSound = value
                 case "alert_sound_repeat_count":
-                    config.alertSoundRepeatCount = min(max(Int(value) ?? 3, 1), 10)
+                    config.alertSoundRepeatCount = min(max(Int(value) ?? 1, 1), 10)
                 case "break_detect_sound_name": config.breakDetectSoundName = value
                 case "language": config.language = AppLanguage(rawValue: value) ?? .system
                 case "appearance": config.appearance = AppAppearance(rawValue: value) ?? .system

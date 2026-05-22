@@ -7,10 +7,12 @@ private enum SettingsTab: Hashable {
 }
 
 struct SettingsView: View {
+    @Environment(AppState.self) private var state
     @State private var selectedTab: SettingsTab = .system
 
     var body: some View {
-        TabView(selection: $selectedTab) {
+        L.lang = state.config.language
+        return TabView(selection: $selectedTab) {
             // Lazy: only build the selected tab's heavy content
             Group {
                 if selectedTab == .system { SystemTab() } else { Color.clear }
@@ -42,7 +44,7 @@ struct SettingsView: View {
             .tag(SettingsTab.about)
             .tabItem { Label(L.tabAbout, systemImage: "info.circle") }
         }
-        .frame(width: 520)
+        .frame(width: 640)
         .fixedSize(horizontal: false, vertical: true)
     }
 }
@@ -373,6 +375,7 @@ struct AppTab: View {
     @State private var showWorkHoursHelp = false
     @State private var isSyncingHolidays = false
     @State private var holidaySyncError: String?
+    @State private var holidaySyncSuccess = false
     @State private var showHolidayCalendar = false
 
     var body: some View {
@@ -577,9 +580,19 @@ struct AppTab: View {
                                 .buttonStyle(.bordered)
                                 .disabled(state.config.holidayCalendar.isEmpty)
 
-                                Text(holidaySyncStatusText)
+                                if holidaySyncSuccess {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "checkmark.circle.fill")
+                                        Text(L.holidaySyncSuccess)
+                                    }
                                     .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(.green)
+                                    .transition(.opacity)
+                                } else {
+                                    Text(holidaySyncStatusText)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
                                 Spacer()
                             }
                             .padding(.horizontal, 14)
@@ -760,30 +773,39 @@ struct AppTab: View {
         }
     }
 
-    private var holidaySyncStatusText: String {
-        guard let synced = state.config.holidayCalendarSyncedAt,
-              let date = ISO8601DateFormatter().date(from: synced) else {
-            return L.holidaySyncNever
-        }
+    private static let syncedAtDisplayFormatter: DateFormatter = {
         let fmt = DateFormatter()
         fmt.dateStyle = .short
         fmt.timeStyle = .short
-        return "\(L.holidaySyncLast): \(fmt.string(from: date))"
+        return fmt
+    }()
+
+    private var holidaySyncStatusText: String {
+        guard let synced = state.config.holidayCalendarSyncedAt,
+              let date = HolidayCalendarService.iso8601.date(from: synced) else {
+            return L.holidaySyncNever
+        }
+        return "\(L.holidaySyncLast): \(Self.syncedAtDisplayFormatter.string(from: date))"
     }
 
     private func syncNationalHolidays() {
         guard !isSyncingHolidays else { return }
         isSyncingHolidays = true
         holidaySyncError = nil
+        holidaySyncSuccess = false
         Task {
             do {
                 let result = try await HolidayCalendarService.syncNationalHolidays()
                 await MainActor.run {
                     state.config.holidayCalendar = result.workDayOverrides
                     state.config.holidayCalendarNames = result.labels
-                    state.config.holidayCalendarSyncedAt = ISO8601DateFormatter().string(from: Date())
+                    state.config.holidayCalendarSyncedAt = HolidayCalendarService.iso8601.string(from: Date())
                     isSyncingHolidays = false
-                    showHolidayCalendar = true
+                    withAnimation(.easeInOut(duration: 0.2)) { holidaySyncSuccess = true }
+                }
+                try? await Task.sleep(nanoseconds: 2_500_000_000)
+                await MainActor.run {
+                    withAnimation(.easeInOut(duration: 0.3)) { holidaySyncSuccess = false }
                 }
             } catch {
                 await MainActor.run {

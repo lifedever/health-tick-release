@@ -331,7 +331,7 @@ struct L {
     static var helpFeatureBreakConfirm: String { isZh ? "开启后，工作结束需手动确认才进入休息；关闭则自动进入休息倒计时。" : "When enabled, you must confirm before entering break. When disabled, break starts automatically." }
     static var helpFeatureBreakConfirmTitle: String { isZh ? "休息确认" : "Break Confirmation" }
     static var helpFeatureSound: String {
-        isZh ? "工作结束时播放提示音，可设置连续播放次数（默认 3 次）。" : "Plays a sound when work time ends; set how many times it repeats (default 3)."
+        isZh ? "工作结束时播放提示音，可设置连续播放次数。" : "Plays a sound when work time ends; set how many times it repeats."
     }
     static var helpFeatureSoundTitle: String { isZh ? "提醒声音" : "Reminder Sound" }
     static var helpFeatureDetectSound: String { isZh ? "休息期间检测到操作时播放提示音，提醒你停下来。" : "Plays a sound when activity is detected during break, reminding you to stop." }
@@ -404,6 +404,7 @@ struct L {
     static var holidaySyncing: String { isZh ? "同步中…" : "Syncing…" }
     static var holidaySyncLast: String { isZh ? "上次同步" : "Last synced" }
     static var holidaySyncNever: String { isZh ? "尚未同步" : "Not synced yet" }
+    static var holidaySyncSuccess: String { isZh ? "同步成功" : "Synced" }
     static var holidaySyncErrorNetwork: String { isZh ? "网络错误，请检查连接后重试" : "Network error. Check your connection and try again." }
     static var holidaySyncErrorAPI: String { isZh ? "节假日数据获取失败，请稍后重试" : "Could not fetch holiday data. Please try again later." }
     static var holidaySyncErrorInvalid: String { isZh ? "无效的请求地址" : "Invalid request URL" }

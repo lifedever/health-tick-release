@@ -187,7 +187,7 @@ struct AppConfig: Equatable {
     var breakDisplaySpecificUUID: String? = nil
     var breakConfirm: Bool = true
     var alertSound: String = "Glass"
-    var alertSoundRepeatCount: Int = 3
+    var alertSoundRepeatCount: Int = 1
     var breakDetectSoundName: String = "Tink"
     var language: AppLanguage = .system
     var appearance: AppAppearance = .system
@@ -357,6 +357,8 @@ final class AppState {
         startQuietCheckTimer()
         setupShortcutMonitors()
 
+        refreshHolidayCalendarIfStale()
+
         // Delay so onChange in HealthTickApp can catch the transition
         if !db.isOnboardingCompleted() {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
@@ -400,6 +402,31 @@ final class AppState {
             }
         }
 
+    }
+
+    // MARK: - Holiday calendar refresh
+
+    /// Background re-sync at startup if the stored calendar no longer covers the upcoming year.
+    /// Silent on failure so an offline launch keeps using whatever data is already on disk.
+    private func refreshHolidayCalendarIfStale() {
+        guard config.holidaySyncEnabled else { return }
+        let currentYear = HolidayCalendarService.chinaCalendar.component(.year, from: Date())
+        let maxCoveredYear = config.holidayCalendarYears().last ?? 0
+        guard maxCoveredYear < currentYear + 1 else { return }
+
+        Task { [weak self] in
+            do {
+                let result = try await HolidayCalendarService.syncNationalHolidays()
+                await MainActor.run { [weak self] in
+                    guard let self else { return }
+                    self.config.holidayCalendar = result.workDayOverrides
+                    self.config.holidayCalendarNames = result.labels
+                    self.config.holidayCalendarSyncedAt = HolidayCalendarService.iso8601.string(from: Date())
+                }
+            } catch {
+                // Offline / API down — keep existing data, retry next launch.
+            }
+        }
     }
 
     // MARK: - Timer State Persistence
