@@ -70,8 +70,14 @@ git push gitee main --tags 2>/dev/null || echo "  Warning: failed to push to Git
 echo "[5/6] Publishing release to GitHub ${REPO}..."
 RELEASE_NOTES="## HealthTick ${TAG}
 
-### 更新内容
-- 修复了已知问题
+### 新功能
+- 同步国家节假日：开启后自动按国务院公布的放假和调休安排判断工作日（数据来自 timor.tech）(#21 感谢 @bingoohuang)
+- 新增节假日月历查看，可视化放假/调休/默认工作日 (#21 感谢 @bingoohuang)
+- 提醒声音可设置连续播放次数（1-10 次）(#21 感谢 @bingoohuang)
+
+### 修复
+- 设置窗口加宽，英文界面 5 个 tab 不再被折叠
+- 切换语言后设置页能立即跟随翻译
 
 ### 下载
 - **Apple Silicon (M1/M2/M3/M4)**: \`HealthTick-${TAG}-Apple-Silicon.dmg\`
