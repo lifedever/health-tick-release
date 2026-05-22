@@ -63,8 +63,10 @@ echo "[4/6] Pushing tag ${TAG}..."
 git add -A
 git diff --cached --quiet || git commit -m "${TAG}"
 git tag "$TAG" 2>/dev/null || true
-git push origin main --tags
-git push gitee main --tags 2>/dev/null || echo "  Warning: failed to push to Gitee remote"
+# Push only main + the new tag — never `--tags`, which would try to push every
+# local tag and abort the release if any stale local tag conflicts with remote.
+git push origin main "$TAG"
+git push gitee main "$TAG" 2>/dev/null || echo "  Warning: failed to push to Gitee remote"
 
 # Upload to GitHub release repo
 echo "[5/6] Publishing release to GitHub ${REPO}..."
