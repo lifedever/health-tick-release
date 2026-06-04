@@ -430,7 +430,7 @@ struct AppTab: View {
                             .labelsHidden()
                             .tint(.purple)
                         }
-                        Text(L.longBreakDesc)
+                        Text(state.config.eyeCareMode ? L.longBreakDescEyeCare : L.longBreakDesc)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -464,10 +464,21 @@ struct AppTab: View {
                             ), in: 300...1800, step: 60)
                             .tint(.purple)
                             .padding(.leading, 24)
+
+                            // In eye-care mode a cycle is fixed at 20 min, so spell out the
+                            // resulting real-world cadence ("每 N 轮" isn't obvious as minutes).
+                            if state.config.eyeCareMode {
+                                Text(L.eyeCareLongBreakHint(
+                                    everyMinutes: state.config.longBreakInterval * 20,
+                                    duration: L.formatBreakDuration(state.config.longBreakSeconds)
+                                ))
+                                    .font(.caption)
+                                    .foregroundStyle(.cyan)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.leading, 24)
+                            }
                         }
                     }
-                    .opacity(state.config.eyeCareMode ? 0.5 : 1.0)
-                    .disabled(state.config.eyeCareMode)
 
                     Divider().padding(.vertical, 4)
 

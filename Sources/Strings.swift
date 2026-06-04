@@ -112,11 +112,15 @@ struct L {
     static var unitSeconds: String { isZh ? "秒" : "s" }
     static var longBreak: String { isZh ? "长休息" : "Long Break" }
     static var longBreakDesc: String { isZh ? "连续工作多轮后，自动延长休息时间" : "Automatically extend break after consecutive cycles" }
+    static var longBreakDescEyeCare: String { isZh ? "护眼期间每 20 分钟远眺 20 秒；每隔几轮，自动把一次远眺换成较长的身体休息" : "During eye care you look away 20s every 20 min; every few cycles, one becomes a longer body break" }
     static var longBreakEvery: String { isZh ? "每" : "Every" }
     static var longBreakCycles: String { isZh ? "轮" : "cycles" }
     static var longBreakDuration: String { isZh ? "长休息时长" : "Long Break Duration" }
     static var eyeCareMode: String { isZh ? "20-20-20 护眼模式" : "20-20-20 Eye Care" }
     static var eyeCareDesc: String { isZh ? "每 20 分钟远眺 20 秒，保护视力" : "Look 20 feet away for 20s every 20 min" }
+    static func eyeCareLongBreakHint(everyMinutes: Int, duration: String) -> String {
+        isZh ? "≈ 每 \(everyMinutes) 分钟休息 \(duration)" : "≈ Rest \(duration) about every \(everyMinutes) min"
+    }
 
     static func formatBreakDuration(_ seconds: Int) -> String {
         if seconds < 60 {
