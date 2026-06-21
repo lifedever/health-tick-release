@@ -200,6 +200,7 @@ struct AppConfig: Equatable {
     var workHoursEnabled: Bool = false
     var workStartTime: String = "09:00"
     var workEndTime: String = "18:00"
+    var offWorkSummaryEnabled: Bool = false   // 工作时间结束时弹出收工汇总（依赖 workHoursEnabled）
     var shortcutEnabled: Bool = false
     var autoPauseOnGoal: Bool = false
     var longBreakEnabled: Bool = false
@@ -271,6 +272,12 @@ enum AppPhase: String {
     case paused
 }
 
+/// Snapshot shown by the off-work summary card. Non-nil = the summary is active.
+struct OffWorkSummaryData: Equatable {
+    let workMinutes: Int
+    let breakCount: Int
+}
+
 @MainActor
 @Observable
 final class AppState {
@@ -301,6 +308,8 @@ final class AppState {
     var showOnboarding: Bool = false
     var currentBreakActivity: BreakActivity?
     var currentReminder: String?
+    /// When set, the off-work summary is showing (drives BreakCardView + MenuView rendering).
+    var offWorkSummary: OffWorkSummaryData?
     var celebrateBadge: Badge?
     var todaySkipCount: Int = 0
     var quietRemainingSeconds: Int = 0
@@ -317,6 +326,13 @@ final class AppState {
     private var quietCheckTimer: Timer?
     private var quietCountdownTimer: Timer?
     private var autoQuietPaused: Bool = false
+    /// Tracks whether the work-hours window was outside-of-hours on the previous quiet check.
+    /// nil = baseline not yet established (first check after launch) → never fires, so launching
+    /// the app after work hours doesn't replay a stale off-work summary.
+    private var lastOutsideWorkActive: Bool?
+    /// "yyyy-MM-dd" of the day the off-work summary was last shown — dedups to once per day.
+    private var offWorkSummaryShownDate: String?
+    private var offWorkSummaryTimer: Timer?
     private var lastActiveDate: String = Database.todayString()
     private var lastWorkMinutesRefresh: Date = .distantPast
     private let db = Database.shared
@@ -1156,6 +1172,16 @@ final class AppState {
     private func checkQuietHours() {
         let activeReasons = currentActiveQuietReasons()
 
+        // Off-work summary: detect the false→true edge of "outside_work_hours" (the work-hours
+        // window just ended). The edge is read from the raw reasons (not skipped), so it still
+        // fires once at the boundary even if the user later enters overtime. The first check
+        // after launch only establishes the baseline (nil) and never fires. Actual presentation
+        // is deferred to the end of this method so the quiet-transition's overlay hide() runs
+        // first and doesn't clobber a freshly-shown floating summary.
+        let outsideNow = activeReasons.contains("outside_work_hours")
+        let workJustEnded = (lastOutsideWorkActive == false) && outsideNow
+        lastOutsideWorkActive = outsideNow
+
         // Remove skipped reasons that are no longer active (the period ended)
         skippedQuietReasons = skippedQuietReasons.intersection(activeReasons)
 
@@ -1217,6 +1243,43 @@ final class AppState {
         if isInQuietHours {
             updateQuietRemaining()
         }
+
+        if workJustEnded {
+            maybeShowOffWorkSummary()
+        }
+    }
+
+    // MARK: - Off-Work Summary
+
+    /// Fire the end-of-work summary if enabled, on a work day, and not already shown today.
+    /// Presented through the same popup dispatch the break reminder uses (honors `breakPosition`).
+    private func maybeShowOffWorkSummary() {
+        guard config.offWorkSummaryEnabled, config.workHoursEnabled else { return }
+        guard config.isWorkDay(at: Date()) else { return }
+        let today = Database.todayString()
+        guard offWorkSummaryShownDate != today else { return }
+        offWorkSummaryShownDate = today
+
+        // The work session is flushed (db.endWork) earlier in checkQuietHours, so todayWorkMinutes
+        // is already refreshed below from the DB. Read it fresh to be safe.
+        let workMinutes = db.todayWorkMinutes() + currentSessionWorkMinutes
+        offWorkSummary = OffWorkSummaryData(workMinutes: workMinutes, breakCount: todayDone)
+        playAlertSound()
+        overlayManager.showOffWorkSummary()
+
+        offWorkSummaryTimer?.invalidate()
+        offWorkSummaryTimer = Timer.scheduledTimer(withTimeInterval: 25, repeats: false) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.dismissOffWorkSummary() }
+        }
+    }
+
+    /// Dismiss the off-work summary (button tap or 25s auto-dismiss) and tear down its popup.
+    func dismissOffWorkSummary() {
+        guard offWorkSummary != nil else { return }
+        offWorkSummaryTimer?.invalidate()
+        offWorkSummaryTimer = nil
+        offWorkSummary = nil
+        overlayManager.hideAll()
     }
 
     // MARK: - Quiet Countdown

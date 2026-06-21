@@ -157,6 +157,7 @@ final class Database {
                 case "work_hours_enabled": config.workHoursEnabled = value == "1"
                 case "work_start_time": config.workStartTime = value
                 case "work_end_time": config.workEndTime = value
+                case "off_work_summary_enabled": config.offWorkSummaryEnabled = value == "1"
                 case "long_break_enabled": config.longBreakEnabled = value == "1"
                 case "long_break_interval": config.longBreakInterval = Int(value) ?? 4
                 case "long_break_seconds": config.longBreakSeconds = Int(value) ?? 900
@@ -231,6 +232,7 @@ final class Database {
         exec("INSERT OR REPLACE INTO config (key, value) VALUES ('work_hours_enabled', '\(config.workHoursEnabled ? "1" : "0")')")
         exec("INSERT OR REPLACE INTO config (key, value) VALUES ('work_start_time', '\(config.workStartTime)')")
         exec("INSERT OR REPLACE INTO config (key, value) VALUES ('work_end_time', '\(config.workEndTime)')")
+        exec("INSERT OR REPLACE INTO config (key, value) VALUES ('off_work_summary_enabled', '\(config.offWorkSummaryEnabled ? "1" : "0")')")
         exec("DELETE FROM config WHERE key = 'break_minutes'")
     }
 

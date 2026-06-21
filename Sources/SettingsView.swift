@@ -373,6 +373,7 @@ struct AppTab: View {
     @State private var showQuietHelp = false
     @State private var expandedQuietId: UUID? = nil
     @State private var showWorkHoursHelp = false
+    @State private var showOffWorkHelp = false
     @State private var isSyncingHolidays = false
     @State private var holidaySyncError: String?
     @State private var holidaySyncSuccess = false
@@ -565,7 +566,8 @@ struct AppTab: View {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.horizontal, 14)
+                                .padding(.leading, 44)
+                                .padding(.trailing, 14)
 
                             HStack(spacing: 8) {
                                 Button {
@@ -606,21 +608,24 @@ struct AppTab: View {
                                 }
                                 Spacer()
                             }
-                            .padding(.horizontal, 14)
+                            .padding(.leading, 44)
+                            .padding(.trailing, 14)
 
                             if let holidaySyncError {
                                 Text(holidaySyncError)
                                     .font(.caption)
                                     .foregroundStyle(.red)
                                     .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(.horizontal, 14)
+                                    .padding(.leading, 44)
+                                    .padding(.trailing, 14)
                             }
 
                             Text(L.holidayWeekdayFallback)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.horizontal, 14)
+                                .padding(.leading, 44)
+                                .padding(.trailing, 14)
                         }
 
                         HStack(spacing: 6) {
@@ -644,7 +649,8 @@ struct AppTab: View {
                                 .buttonStyle(.borderless)
                             }
                         }
-                        .padding(.horizontal, 14)
+                        .padding(.leading, 44)
+                        .padding(.trailing, 14)
                         .opacity(state.config.holidaySyncEnabled ? 0.85 : 1)
                     }
                     .padding(.vertical, 10)
@@ -704,7 +710,35 @@ struct AppTab: View {
 
                                 Spacer()
                             }
-                            .padding(.horizontal, 14)
+                            .padding(.leading, 44)
+                            .padding(.trailing, 14)
+
+                            HStack(spacing: 6) {
+                                Text(L.offWorkSummaryLabel)
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                Button {
+                                    showOffWorkHelp.toggle()
+                                } label: {
+                                    Image(systemName: "questionmark.circle")
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(.tertiary)
+                                }
+                                .buttonStyle(.borderless)
+                                .popover(isPresented: $showOffWorkHelp) {
+                                    Text(L.offWorkSummaryHelp)
+                                        .font(.callout)
+                                        .padding(12)
+                                        .frame(width: 260)
+                                }
+                                Spacer()
+                                Toggle("", isOn: $state.config.offWorkSummaryEnabled)
+                                    .labelsHidden()
+                                    .toggleStyle(.switch)
+                                    .tint(.green)
+                            }
+                            .padding(.leading, 44)
+                            .padding(.trailing, 14)
                         }
                     }
                     .padding(.vertical, 4)
@@ -762,7 +796,8 @@ struct AppTab: View {
                                     state.config.quietHours.removeAll { $0.id == periodId }
                                 }
                             )
-                            .padding(.horizontal, 14)
+                            .padding(.leading, 44)
+                            .padding(.trailing, 14)
                         }
                     }
                     .padding(.vertical, 10)

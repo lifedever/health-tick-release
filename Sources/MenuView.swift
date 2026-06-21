@@ -21,24 +21,34 @@ struct MenuView: View {
         }
     }
 
+    /// Off-work summary rides the menu panel only when break position is menuWindow;
+    /// floating/fullscreen positions render it through the overlay instead (same as breaks).
+    private var showSummaryInMenu: Bool {
+        state.offWorkSummary != nil && state.config.breakPosition == .menuWindow
+    }
+
     var body: some View {
 
         VStack(spacing: 12) {
-            // Header indicators (own observation scope)
-            MenuHeaderView()
-
-            if isBreakPhase {
+            if showSummaryInMenu {
                 BreakCardView()
             } else {
-                // Timer circle — only this re-renders every second
-                MenuTimerCircle()
+                // Header indicators (own observation scope)
+                MenuHeaderView()
 
-                // Stats — re-renders only when stats change (infrequent)
-                MenuStatsContent()
+                if isBreakPhase {
+                    BreakCardView()
+                } else {
+                    // Timer circle — only this re-renders every second
+                    MenuTimerCircle()
 
-                Divider().padding(.horizontal, 4)
+                    // Stats — re-renders only when stats change (infrequent)
+                    MenuStatsContent()
 
-                MenuControls()
+                    Divider().padding(.horizontal, 4)
+
+                    MenuControls()
+                }
             }
 
             Divider().padding(.horizontal, 4)

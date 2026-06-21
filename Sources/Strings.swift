@@ -529,6 +529,16 @@ struct L {
     static var outsideWorkHours: String { isZh ? "非工作时间" : "Outside Work Hours" }
     static var dailyGoalReached: String { isZh ? "今日目标已完成！" : "Daily goal reached!" }
 
+    // MARK: - Off-Work Summary
+    static var offWorkSummaryLabel: String { isZh ? "下班提醒" : "Off-Work Reminder" }
+    static var offWorkSummaryHelp: String { isZh ? "到达下班时间时，弹出今日工作汇总，提醒你收工。仅在开启「工作时间」时生效。" : "When work hours end, show a summary of today's work to remind you to wrap up. Only active when Work Hours is on." }
+    static var offWorkSummaryTitle: String { isZh ? "工作时间结束了" : "Work Hours Are Over" }
+    static func offWorkSummaryStats(_ minutes: Int, _ breaks: Int) -> String {
+        isZh ? "今天专注工作 \(formatWorkTime(minutes))，完成 \(breaks) 次休息" : "Focused for \(formatWorkTime(minutes)) today · \(breaks) breaks"
+    }
+    static var offWorkSummaryFooter: String { isZh ? "辛苦了，注意休息 🌇" : "Great work — time to rest 🌇" }
+    static var offWorkSummaryDismiss: String { isZh ? "知道了" : "Got it" }
+
     // MARK: - Skip Detection
     static var skipWarningMenu: String { isZh ? "今日多次跳过休息，注意健康" : "Breaks skipped today, take care" }
     static func skipWarningBreak(_ count: Int) -> String {

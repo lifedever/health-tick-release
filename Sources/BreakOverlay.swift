@@ -29,7 +29,9 @@ struct BreakCardView: View {
     }
 
     var body: some View {
-        if fullscreen {
+        if let summary = state.offWorkSummary {
+            summaryBody(summary)
+        } else if fullscreen {
             VStack(spacing: 20) {
                 switch state.phase {
                 case .alerting: alertingBody
@@ -50,6 +52,54 @@ struct BreakCardView: View {
             }
             .frame(width: 240)
         }
+    }
+
+    // MARK: - Off-Work Summary (shares the break popup rendering path)
+
+    @ViewBuilder
+    private func summaryBody(_ summary: OffWorkSummaryData) -> some View {
+        let iconSize: CGFloat = fullscreen ? 60 : 40
+        let titleSize: CGFloat = fullscreen ? 26 : 16
+        VStack(spacing: 0) {
+            Image(systemName: "sunset.fill")
+                .font(.system(size: iconSize))
+                .foregroundStyle(.orange)
+                .padding(.top, fullscreen ? 0 : 28)
+
+            Text(L.offWorkSummaryTitle)
+                .font(.system(size: titleSize, weight: .semibold))
+                .foregroundStyle(.primary)
+                .padding(.top, 12)
+
+            Text(L.offWorkSummaryStats(summary.workMinutes, summary.breakCount))
+                .font(.system(size: fullscreen ? 16 : 13))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 20)
+                .padding(.top, 8)
+
+            Text(L.offWorkSummaryFooter)
+                .font(.system(size: fullscreen ? 14 : 12))
+                .foregroundStyle(.primary.opacity(0.7))
+                .padding(.top, 6)
+
+            Button {
+                state.dismissOffWorkSummary()
+            } label: {
+                Text(L.offWorkSummaryDismiss)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .background(.orange.gradient, in: RoundedRectangle(cornerRadius: 10))
+            }
+            .buttonStyle(.borderless)
+            .padding(.horizontal, 24)
+            .padding(.top, 16)
+
+            if !fullscreen { Spacer().frame(height: 24) }
+        }
+        .frame(width: fullscreen ? 360 : 240)
     }
 
     // MARK: - Floating: Alerting
@@ -512,6 +562,25 @@ final class BreakOverlayManager {
         dismissMenuBarPanel()
     }
 
+    // MARK: - Off-Work Summary
+
+    /// Show the off-work summary through the SAME dispatch the break popup uses, honoring the
+    /// user's `breakPosition`: menu-bar dropdown, a floating corner card, or a fullscreen overlay.
+    /// Content comes from `BreakCardView` (driven by `appState.offWorkSummary`); no break countdown.
+    func showOffWorkSummary() {
+        let position = appState?.config.breakPosition ?? .menuWindow
+        switch position {
+        case .menuWindow:
+            pinForAlert()
+        case .fullscreen:
+            currentPosition = .fullscreen
+            createFullscreen()
+        default:
+            currentPosition = position
+            createFloating(position: position)
+        }
+    }
+
     /// Dismiss the MenuBarExtra panel.
     private func dismissMenuBarPanel() {
         guard let panel = findMenuBarPanel(), panel.isVisible else { return }
@@ -638,7 +707,8 @@ final class BreakOverlayManager {
 
     private func ensureMenuPinned() {
         let isAlerting = appState?.phase == .alerting
-        guard isMenuWindowMode || isAlerting else { return }
+        let isSummary = appState?.offWorkSummary != nil
+        guard isMenuWindowMode || isAlerting || isSummary else { return }
         if let panel = menuBarExtraPanel, panel.isVisible {
             // Don't reposition here — would make panel "follow the mouse" every 2s in active mode
             return
