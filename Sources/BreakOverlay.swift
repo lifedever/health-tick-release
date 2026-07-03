@@ -409,6 +409,29 @@ private class KeyablePanel: NSPanel {
     override var canBecomeKey: Bool { true }
 }
 
+/// Last screen frame of the SYSTEM MenuBarExtra panel, recorded whenever the
+/// user opens it (see MenuPanelFrameRecorder in MenuView). Menu-bar managers
+/// (iBar / Bartender) pull the real status icon out of the window server and
+/// draw a proxy — the icon is untraceable at popup time, but the system panel
+/// always opens under that proxy, so its last frame is the best anchor for
+/// the auto-popup.
+@MainActor
+enum MenuPanelAnchor {
+    private static let key = "menuPanelLastFrame"
+
+    static var lastFrame: NSRect? {
+        get {
+            guard let s = UserDefaults.standard.string(forKey: key) else { return nil }
+            let r = NSRectFromString(s)
+            return r.isEmpty ? nil : r
+        }
+        set {
+            guard let f = newValue else { return }
+            UserDefaults.standard.set(NSStringFromRect(f), forKey: key)
+        }
+    }
+}
+
 /// NSHostingView subclass for floating break overlay:
 /// - Transparent background (isOpaque = false, clear layer)
 /// - allowsVibrancy for proper NSVisualEffectView blending
@@ -463,13 +486,7 @@ final class BreakOverlayManager {
     var onForceEnd: (() -> Void)?
     var onBreakDone: (() -> Void)?
 
-    // Menu window pinning
-    private var menuPinTimer: Timer?
-    private weak var menuBarExtraPanel: NSPanel?
-    private var isMenuWindowMode = false
     private var monitorStartTime: Date?
-    private var originalPanelLevel: NSWindow.Level?
-    private var originalHidesOnDeactivate: Bool?
 
     // Track current position for repositioning after screen changes
     private var currentPosition: BreakPosition?
@@ -500,8 +517,10 @@ final class BreakOverlayManager {
 
     func show(seconds: Int) {
         remaining = seconds
-        isMenuWindowMode = false
         let position = appState?.config.breakPosition ?? .topRight
+        // Clear the fallback alert card (if any) before building the break UI.
+        for w in windows { w.orderOut(nil) }
+        windows.removeAll()
         currentPosition = position
         if position == .fullscreen {
             createFullscreen()
@@ -537,14 +556,21 @@ final class BreakOverlayManager {
         }
     }
 
-    func showMenuWindow(seconds: Int) {
-        remaining = seconds
-        isMenuWindowMode = true
-        startMonitoring()
+    /// Auto-show the break reminder in the system MenuBarExtra panel via
+    /// orderFrontRegardless, then immediately repair the panel frame to the
+    /// content's fitting size — the missing step that caused issue #24 (a
+    /// hidden panel keeps its stale frame; new, shorter content leaves a
+    /// transparent gap). Never activates the app or takes key focus.
+    func showAlert() {
+        pinMenuPanel()
+    }
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-            self?.pinMenuBarExtra()
-        }
+    /// Break countdown in menuWindow mode: keep the pinned system panel and
+    /// let MenuView morph in place; the frame repair runs on each appear.
+    func showMenuBreak(seconds: Int) {
+        remaining = seconds
+        pinMenuPanel()
+        startMonitoring()
     }
 
     func hide() {
@@ -552,14 +578,13 @@ final class BreakOverlayManager {
         timer = nil
         for w in windows { w.orderOut(nil) }
         windows.removeAll()
-        unpinMenuBarExtra()
-        isMenuWindowMode = false
+        unpinMenuPanel()
         currentPosition = nil
     }
 
     func hideAll() {
         hide()
-        dismissMenuBarPanel()
+        dismissMenuPanel()
     }
 
     // MARK: - Off-Work Summary
@@ -568,10 +593,12 @@ final class BreakOverlayManager {
     /// user's `breakPosition`: menu-bar dropdown, a floating corner card, or a fullscreen overlay.
     /// Content comes from `BreakCardView` (driven by `appState.offWorkSummary`); no break countdown.
     func showOffWorkSummary() {
+        for w in windows { w.orderOut(nil) }
+        windows.removeAll()
         let position = appState?.config.breakPosition ?? .menuWindow
         switch position {
         case .menuWindow:
-            pinForAlert()
+            pinMenuPanel()
         case .fullscreen:
             currentPosition = .fullscreen
             createFullscreen()
@@ -581,34 +608,140 @@ final class BreakOverlayManager {
         }
     }
 
-    /// Dismiss the MenuBarExtra panel.
-    private func dismissMenuBarPanel() {
+    // MARK: - Menu panel pinning (direct orderFront + frame repair)
+
+    private var menuPinTimer: Timer?
+
+    /// Pin the SYSTEM MenuBarExtra panel: order it front (no activation, no
+    /// key focus) and repair its frame to the content's fitting size. Falls
+    /// back to a self-drawn dropdown card if the panel object can't be found.
+    func pinMenuPanel() {
+        for w in windows { w.orderOut(nil) }
+        windows.removeAll()
+        currentPosition = .menuWindow
+        guard let panel = findMenuBarPanel(includeHidden: true) else {
+            createFloating(position: .menuWindow)
+            return
+        }
+        panel.hidesOnDeactivate = false
+        panel.orderFrontRegardless()
+        repositionMenuPanelIfNeeded(panel)
+        fixMenuPanelFrame(panel)
+        startMenuWatchdog()
+    }
+
+    /// Close the user-opened MenuBarExtra panel (if visible) and stop pinning.
+    func dismissMenuPanel() {
+        unpinMenuPanel()
         guard let panel = findMenuBarPanel(), panel.isVisible else { return }
         panel.orderOut(nil)
     }
 
+    private func unpinMenuPanel() {
+        menuPinTimer?.invalidate()
+        menuPinTimer = nil
+        findMenuBarPanel(includeHidden: true)?.hidesOnDeactivate = true
+    }
+
+    /// The system dismisses the panel on outside clicks; while an alert /
+    /// menu-mode break rides it, re-show it (orderFront only — no focus).
+    private func startMenuWatchdog() {
+        menuPinTimer?.invalidate()
+        menuPinTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.ensureMenuPanelVisible() }
+        }
+    }
+
+    private func ensureMenuPanelVisible() {
+        guard shouldKeepMenuPanelPinned else { return }
+        guard let panel = findMenuBarPanel(includeHidden: true), !panel.isVisible else { return }
+        panel.orderFrontRegardless()
+        fixMenuPanelFrame(panel)
+    }
+
+    private var shouldKeepMenuPanelPinned: Bool {
+        guard let state = appState, !state.isPreview else { return false }
+        if state.phase == .alerting { return true }
+        guard state.config.breakPosition == .menuWindow else { return false }
+        if state.offWorkSummary != nil { return true }
+        return state.phase == .breaking || state.phase == .waiting
+    }
+
+    /// Resize the panel to its SwiftUI content's fitting size, keeping the
+    /// top edge anchored. A hidden MenuBarExtra panel keeps its stale frame
+    /// when content changes underneath — this repair is what prevents the
+    /// transparent-gap bug (issue #24). Runs async so SwiftUI can commit the
+    /// current phase's content first.
+    private func fixMenuPanelFrame(_ panel: NSPanel) {
+        DispatchQueue.main.async { [weak panel] in
+            guard let panel, let content = panel.contentView else { return }
+            let hosting = Self.findHostingView(in: content) ?? content
+            let fit = hosting.fittingSize
+            guard fit.width > 100, fit.height > 100, fit.height < 2000 else { return }
+            var f = panel.frame
+            guard abs(f.height - fit.height) > 2 || abs(f.width - fit.width) > 2 else { return }
+            let topY = f.maxY
+            f.size = NSSize(width: ceil(fit.width), height: ceil(fit.height))
+            f.origin.y = topY - f.size.height
+            panel.setFrame(f, display: true)
+        }
+    }
+
+    private static func findHostingView(in view: NSView) -> NSView? {
+        if String(describing: type(of: view)).contains("NSHostingView") { return view }
+        for sub in view.subviews {
+            if let h = findHostingView(in: sub) { return h }
+        }
+        return nil
+    }
+
+    /// If the panel has never been positioned (or its frame is off every
+    /// screen), place it under the recorded anchor — the spot where the user
+    /// last opened it (covers iBar-proxied icons) — or the top-right corner.
+    private func repositionMenuPanelIfNeeded(_ panel: NSPanel) {
+        if NSScreen.screens.contains(where: { $0.frame.intersects(panel.frame) }) { return }
+        guard let screen = activeScreen() else { return }
+        let vis = screen.visibleFrame
+        let origin: NSPoint
+        if let cached = MenuPanelAnchor.lastFrame, cached.midX > vis.minX, cached.midX < vis.maxX {
+            origin = NSPoint(x: cached.midX - panel.frame.width / 2,
+                             y: vis.maxY - panel.frame.height - 4)
+        } else {
+            origin = NSPoint(x: vis.maxX - panel.frame.width - 8,
+                             y: vis.maxY - panel.frame.height - 8)
+        }
+        panel.setFrameOrigin(origin)
+    }
+
+    /// Called from MenuView.onAppear on every presentation / content rebuild
+    /// of the system panel: record the anchor and repair the frame.
+    func noteSystemMenuPanelOpened() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            guard let self, let panel = self.findMenuBarPanel() else { return }
+            MenuPanelAnchor.lastFrame = panel.frame
+            self.fixMenuPanelFrame(panel)
+        }
+    }
+
+    /// Screen-coordinate frame of this app's status-bar icon, captured from
+    /// the label view's own host window (see StatusItemLocator). Off-screen
+    /// frames (icon hidden by menu-bar managers) are rejected by callers via
+    /// the on-screen midX check.
+    private func statusItemIconFrame() -> NSRect? {
+        guard let w = StatusItemLocator.window, w.frame.width > 0 else { return nil }
+        return w.frame
+    }
+
     /// Find the MenuBarExtra panel by searching app windows.
-    private func findMenuBarPanel() -> NSPanel? {
+    private func findMenuBarPanel(includeHidden: Bool = false) -> NSPanel? {
         NSApp?.windows.first(where: { w in
             w is NSPanel
                 && !(w is KeyablePanel)
                 && w.styleMask.contains(.nonactivatingPanel)
                 && w.styleMask.contains(.fullSizeContentView)
                 && w.frame.width < 350
-                && w.isVisible
+                && (includeHidden || w.isVisible)
         }) as? NSPanel
-    }
-
-    func dismissMenuPanel() {
-        unpinMenuBarExtra()
-        isMenuWindowMode = false
-        closeMenuBarExtra()
-    }
-
-    func pinForAlert() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-            self?.pinMenuBarExtra()
-        }
     }
 
     func preview(position: BreakPosition) {
@@ -630,17 +763,11 @@ final class BreakOverlayManager {
 
         currentPosition = position
         if position == .menuWindow {
-            isMenuWindowMode = true
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-                self?.pinMenuBarExtra()
-            }
+            pinMenuPanel()
+        } else if position == .fullscreen {
+            createFullscreen()
         } else {
-            isMenuWindowMode = false
-            if position == .fullscreen {
-                createFullscreen()
-            } else {
-                createFloating(position: position)
-            }
+            createFloating(position: position)
         }
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
@@ -669,157 +796,35 @@ final class BreakOverlayManager {
         }
     }
 
-    // MARK: - Menu window pinning
-
-    private func pinMenuBarExtra() {
-        findAndPinPanel()
-
-        menuPinTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
-            guard let self else { return }
-            Task { @MainActor [weak self] in
-                self?.ensureMenuPinned()
-            }
-        }
-    }
-
-    private func findAndPinPanel() {
-        guard let app = NSApp else { return }
-        for window in app.windows {
-            guard let panel = window as? NSPanel else { continue }
-            if panel is KeyablePanel { continue }
-            if panel.styleMask.contains(.nonactivatingPanel)
-                && panel.styleMask.contains(.fullSizeContentView)
-                && panel.frame.width < 350 {
-                menuBarExtraPanel = panel
-                originalPanelLevel = panel.level
-                originalHidesOnDeactivate = panel.hidesOnDeactivate
-                panel.hidesOnDeactivate = false
-                // Keep the panel's original level — changing to .floating
-                // causes vibrancy compositing glitches on white backgrounds
-                panel.orderFrontRegardless()
-                NSApp.activate(ignoringOtherApps: true)
-                panel.makeKey()
-                repositionMenuPanelIfNeeded(panel)
-                return
-            }
-        }
-    }
-
-    private func ensureMenuPinned() {
-        let isAlerting = appState?.phase == .alerting
-        let isSummary = appState?.offWorkSummary != nil
-        guard isMenuWindowMode || isAlerting || isSummary else { return }
-        if let panel = menuBarExtraPanel, panel.isVisible {
-            // Don't reposition here — would make panel "follow the mouse" every 2s in active mode
-            return
-        }
-        // Panel was lost or hidden — re-show without activating
-        guard let app = NSApp else { return }
-        for window in app.windows {
-            guard let panel = window as? NSPanel else { continue }
-            if panel is KeyablePanel { continue }
-            if panel.styleMask.contains(.nonactivatingPanel)
-                && panel.styleMask.contains(.fullSizeContentView)
-                && panel.frame.width < 350 {
-                menuBarExtraPanel = panel
-                panel.hidesOnDeactivate = false
-                panel.orderFrontRegardless()
-                repositionMenuPanelIfNeeded(panel)
-                return
-            }
-        }
-    }
-
-    /// Move the menu-bar popover panel onto the configured target display.
-    /// Active/specific honored verbatim; "all displays" silently coerces to active
-    /// (the popover is a single panel and can't be on multiple screens).
-    private func repositionMenuPanelIfNeeded(_ panel: NSPanel) {
-        let target = appState?.config.breakDisplayTarget ?? .activeScreen
-        let screen: NSScreen?
-        switch target {
-        case .activeScreen, .allScreens:
-            screen = activeScreen()
-        case .specific:
-            if let uuid = appState?.config.breakDisplaySpecificUUID,
-               let s = NSScreen.screens.first(where: { $0.stableUUID == uuid }) {
-                screen = s
-            } else {
-                screen = activeScreen()
-            }
-        }
-        guard let screen, !panel.frame.isEmpty else { return }
-        // Skip if panel is already inside the target screen
-        if screen.frame.contains(panel.frame) { return }
-
-        let vis = screen.visibleFrame
-        let margin: CGFloat = 8
-        let size = panel.frame.size
-        let origin = NSPoint(
-            x: vis.maxX - size.width - margin,
-            y: vis.maxY - size.height - margin
-        )
-        panel.setFrameOrigin(origin)
-    }
-
-    private var outsideClickMonitor: Any?
-
-    private func unpinMenuBarExtra() {
-        menuPinTimer?.invalidate()
-        menuPinTimer = nil
-        if let panel = menuBarExtraPanel {
-            panel.hidesOnDeactivate = originalHidesOnDeactivate ?? true
-            // Set up a one-shot global monitor: dismiss panel on next outside click
-            setupOutsideClickDismiss(for: panel)
-        }
-        menuBarExtraPanel = nil
-        originalPanelLevel = nil
-        originalHidesOnDeactivate = nil
-    }
-
-    private func setupOutsideClickDismiss(for panel: NSPanel) {
-        // Remove any existing monitor
-        if let monitor = outsideClickMonitor {
-            NSEvent.removeMonitor(monitor)
-            outsideClickMonitor = nil
-        }
-        outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self, weak panel] event in
-            guard let self, let panel, panel.isVisible else {
-                if let self, let monitor = self.outsideClickMonitor {
-                    NSEvent.removeMonitor(monitor)
-                    self.outsideClickMonitor = nil
-                }
-                return
-            }
-            // Check if click is outside the panel
-            let clickLocation = event.locationInWindow  // screen coordinates for global events
-            if !panel.frame.contains(clickLocation) {
-                panel.orderOut(nil)
-                if let monitor = self.outsideClickMonitor {
-                    NSEvent.removeMonitor(monitor)
-                    self.outsideClickMonitor = nil
-                }
-            }
-        }
-    }
-
-    private func closeMenuBarExtra() {
-        if let panel = findMenuBarPanel() {
-            panel.orderOut(nil)
-        }
-    }
-
     // MARK: - Floating window (SwiftUI BreakCardView)
 
     private func createFloating(position: BreakPosition) {
         guard let state = appState else { return }
-        let screens = targetScreens()
+        let screens: [NSScreen]
+        if position == .menuWindow {
+            // Single dropdown card, on the display that hosts the icon (or
+            // where the system panel last opened when the icon is proxied).
+            let anchorFrame = statusItemIconFrame() ?? MenuPanelAnchor.lastFrame
+            let anchorScreen = anchorFrame.flatMap { f in
+                NSScreen.screens.first { $0.frame.intersects(f) }
+            }
+            screens = [anchorScreen ?? activeScreen()].compactMap { $0 }
+        } else {
+            screens = targetScreens()
+        }
         guard !screens.isEmpty else { return }
 
         let cornerRadius: CGFloat = 14
         let margin: CGFloat = 20
 
         for screen in screens {
-            let cardView = BreakCardView()
+            // menuWindow mode reproduces the old MenuBarExtra dropdown verbatim:
+            // same content (MenuView with quit button / header banners), anchored
+            // under the status icon. Other positions keep the bare break card.
+            let inner: AnyView = position == .menuWindow
+                ? AnyView(MenuView())
+                : AnyView(BreakCardView())
+            let cardView = inner
                 .background(VisualEffectBackground())
                 .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
                 .shadow(color: .black.opacity(0.3), radius: 12, y: 4)
@@ -843,7 +848,24 @@ final class BreakOverlayManager {
             case .center:
                 x = vis.midX - pw / 2
                 y = vis.midY - ph / 2
-            case .fullscreen, .menuWindow:
+            case .menuWindow:
+                // Flush under the menu bar, centered like the real dropdown.
+                // Anchor priority: live icon frame → last system-panel frame
+                // (covers iBar-proxied icons) → right corner.
+                y = vis.maxY - ph - 4
+                let anchorX: CGFloat? = {
+                    if let icon = statusItemIconFrame(),
+                       icon.midX > vis.minX, icon.midX < vis.maxX { return icon.midX }
+                    if let cached = MenuPanelAnchor.lastFrame,
+                       cached.midX > vis.minX, cached.midX < vis.maxX { return cached.midX }
+                    return nil
+                }()
+                if let anchorX {
+                    x = min(max(anchorX - pw / 2, vis.minX + 8), vis.maxX - pw - 8)
+                } else {
+                    x = vis.maxX - pw - 8
+                }
+            case .fullscreen:
                 x = vis.minX; y = vis.minY
             }
 
@@ -858,6 +880,15 @@ final class BreakOverlayManager {
             p.backgroundColor = .clear
             p.isMovableByWindowBackground = true
             p.hasShadow = false
+            // NSPanel hides on app deactivation by default — the reminder must
+            // survive the user switching apps or it silently disappears.
+            p.hidesOnDeactivate = false
+            if position == .menuWindow {
+                // Match the system dropdown: visible above fullscreen Spaces
+                // too (the reminder must reach users working fullscreen).
+                p.level = .statusBar
+                p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+            }
             p.appearance = NSApp?.appearance ?? NSApp?.effectiveAppearance
 
             hostingView.frame = NSMakeRect(0, 0, pw, ph)
@@ -867,7 +898,13 @@ final class BreakOverlayManager {
             hostingView.layer?.masksToBounds = true
             p.contentView = hostingView
 
-            p.makeKeyAndOrderFront(nil)
+            if position == .menuWindow {
+                // Never touch keyboard focus for the auto-popup — buttons
+                // work on plain clicks; the quick-confirm shortcut is global.
+                p.orderFrontRegardless()
+            } else {
+                p.makeKeyAndOrderFront(nil)
+            }
             windows.append(p)
         }
     }

@@ -113,12 +113,33 @@ struct HealthTickApp: App {
 
 }
 
+/// The window that hosts our status-bar icon, captured from inside the label
+/// view itself — the only reliable way to locate the icon (SwiftUI doesn't
+/// expose MenuBarExtra's NSStatusItem, and menu-bar managers like iBar move
+/// status windows around, including off-screen).
+@MainActor
+enum StatusItemLocator {
+    static weak var window: NSWindow?
+}
+
+private struct StatusWindowGrabber: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        let v = NSView()
+        DispatchQueue.main.async { StatusItemLocator.window = v.window }
+        return v
+    }
+    func updateNSView(_ nsView: NSView, context: Context) {
+        DispatchQueue.main.async { StatusItemLocator.window = nsView.window }
+    }
+}
+
 struct MenuBarLabel: View {
     @Environment(AppState.self) var state
     private static let isDev = Bundle.main.bundleIdentifier?.hasSuffix(".dev") == true
 
     var body: some View {
         Image(systemName: phaseSystemImage)
+            .background(StatusWindowGrabber())
     }
 
     private var phaseSystemImage: String {

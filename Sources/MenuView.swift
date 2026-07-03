@@ -68,6 +68,10 @@ struct MenuView: View {
         .frame(width: 240)
         .onAppear {
             menuBringOtherWindowsToFront()
+            // Fires on every open of the system MenuBarExtra panel (and
+            // harmlessly when MenuView appears in the dropdown card — the
+            // manager only reacts if the system panel is actually visible).
+            state.overlayManager.noteSystemMenuPanelOpened()
         }
     }
 }

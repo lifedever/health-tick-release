@@ -72,14 +72,10 @@ git push gitee main "$TAG" 2>/dev/null || echo "  Warning: failed to push to Git
 echo "[5/6] Publishing release to GitHub ${REPO}..."
 RELEASE_NOTES="## HealthTick ${TAG}
 
-### 新功能
-- 同步国家节假日：开启后自动按国务院公布的放假和调休安排判断工作日（数据来自 timor.tech）(#21 感谢 @bingoohuang)
-- 新增节假日月历查看，可视化放假/调休/默认工作日 (#21 感谢 @bingoohuang)
-- 提醒声音可设置连续播放次数（1-10 次）(#21 感谢 @bingoohuang)
-
 ### 修复
-- 设置窗口加宽，英文界面 5 个 tab 不再被折叠
-- 切换语言后设置页能立即跟随翻译
+- 修复「菜单栏窗口」模式下休息提醒弹窗出现大面积透明、窗口比内容大的问题 (#24 感谢 @Sunior)：弹窗显示时自动校正面板尺寸
+- 休息提醒弹出时不再抢占键盘焦点，打字不会被打断
+- 菜单面板不可用时提供同样式兜底弹窗，全屏应用下也能收到提醒
 
 ### 下载
 - **Apple Silicon (M1/M2/M3/M4)**: \`HealthTick-${TAG}-Apple-Silicon.dmg\`

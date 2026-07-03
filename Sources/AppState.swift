@@ -559,7 +559,7 @@ final class AppState {
             phase = .alerting
             remainingSeconds = 0
             saveTimerState()
-            overlayManager.pinForAlert()
+            overlayManager.showAlert()
         } else {
             startBreak()
         }
@@ -567,7 +567,11 @@ final class AppState {
 
     func confirmBreak() {
         cancelAlertSoundBurst()
-        overlayManager.dismissMenuPanel()
+        // menuWindow mode keeps the pinned panel — it morphs to the countdown
+        // in place; other modes close it before showing their own break UI.
+        if config.breakPosition != .menuWindow {
+            overlayManager.dismissMenuPanel()
+        }
         startBreak()
     }
 
@@ -592,7 +596,7 @@ final class AppState {
         }
 
         if config.breakPosition == .menuWindow {
-            overlayManager.showMenuWindow(seconds: secs)
+            overlayManager.showMenuBreak(seconds: secs)
         } else {
             overlayManager.dismissMenuPanel()
             overlayManager.show(seconds: secs)
@@ -603,10 +607,8 @@ final class AppState {
         phase = .waiting
         remainingSeconds = 0
         breakWarning = ""
-        // Only pin menu bar for menuWindow mode; other modes have their own windows
-        if config.breakPosition == .menuWindow {
-            overlayManager.pinForAlert()
-        }
+        // No overlay call needed: the break UI (pinned menu panel or floating
+        // card) persists across breaking → waiting and morphs to the waiting body.
 
         let actualSeconds: Int?
         if let start = breakStartDate {
