@@ -10,8 +10,7 @@ struct HealthTickApp: App {
     var body: some Scene {
 
         MenuBarExtra {
-            MenuView()
-                .id(state.phase)
+            MenuPanelRoot()
                 .environment(state)
         } label: {
             MenuBarLabel()
@@ -130,6 +129,28 @@ private struct StatusWindowGrabber: NSViewRepresentable {
     }
     func updateNSView(_ nsView: NSView, context: Context) {
         DispatchQueue.main.async { StatusItemLocator.window = nsView.window }
+    }
+}
+
+/// Stable-identity root for the MenuBarExtra panel content. MenuView below is
+/// recreated on every phase change (`.id`), which destroys its modifiers
+/// before pending onChange events fire — so the dismiss bridge lives HERE,
+/// where identity never changes across phases.
+struct MenuPanelRoot: View {
+    @Environment(AppState.self) var state
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        MenuView()
+            .id(state.phase)
+            .onChange(of: state.menuPanelDismissRequest) { _, _ in
+                // Expired = a swallowed request replayed on re-presentation;
+                // acting on it would kill the panel the user just opened.
+                guard Date().timeIntervalSince(state.menuPanelDismissRequestedAt) < 0.5 else {
+                    return
+                }
+                dismiss()
+            }
     }
 }
 

@@ -292,6 +292,23 @@ final class AppState {
     var breakWarning: String = ""
     var breakSkipCount: Int = 0
     var isPreview: Bool = false
+
+    /// Asks the MenuBarExtra panel to close itself via SwiftUI's dismiss —
+    /// the system's own dismissal path. Never orderOut the panel from
+    /// outside: on macOS 26 that permanently detaches it from all Spaces and
+    /// later presentations stay invisible (issue #25).
+    ///
+    /// The request carries a timestamp because SwiftUI may swallow the
+    /// onChange during an `.id` identity swap and REPLAY it at the next
+    /// panel presentation — a stale replayed dismiss would instantly kill a
+    /// panel the user just opened. Consumers must ignore expired requests.
+    var menuPanelDismissRequest = 0
+    var menuPanelDismissRequestedAt = Date.distantPast
+
+    func requestMenuPanelDismiss() {
+        menuPanelDismissRequestedAt = Date()
+        menuPanelDismissRequest += 1
+    }
     let breakSkipNeeded = 3
     var lastSkipClickTime: Date?
     var weekData: [(String, Int)] = []
@@ -507,12 +524,24 @@ final class AppState {
 
     // MARK: - Timer
 
+    /// Dev-build testing override: `defaults write
+    /// com.lifedever.healthtick.dev devWorkSecondsOverride 10` shortens the
+    /// work countdown for fast iteration. Release builds are unaffected
+    /// (different defaults domain, no .dev bundle suffix).
+    private var workDurationSeconds: Int {
+        if Bundle.main.bundleIdentifier?.hasSuffix(".dev") == true {
+            let dev = UserDefaults.standard.integer(forKey: "devWorkSecondsOverride")
+            if dev > 0 { return dev }
+        }
+        return config.workMinutes * 60
+    }
+
     func startWork() {
         goalAutoStopped = false
         phase = .working
         currentSessionWorkConfig = config.workMinutes
-        targetTime = Date().addingTimeInterval(Double(config.workMinutes * 60))
-        remainingSeconds = config.workMinutes * 60
+        targetTime = Date().addingTimeInterval(Double(workDurationSeconds))
+        remainingSeconds = workDurationSeconds
         currentSessionId = db.startSession(workMinutes: config.workMinutes, breakSeconds: config.breakSeconds, dailyGoal: config.dailyGoal)
         saveTimerState()
         startTicking()

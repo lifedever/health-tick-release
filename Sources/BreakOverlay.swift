@@ -578,7 +578,14 @@ final class BreakOverlayManager {
         timer = nil
         for w in windows { w.orderOut(nil) }
         windows.removeAll()
-        unpinMenuPanel()
+        // Always end a flow by explicitly ordering the system panel out. The
+        // watchdog re-shows it behind the system's back (orderFront while the
+        // system considers it dismissed); leaving that desync in place makes
+        // later icon clicks toggle state without ever re-attaching the window
+        // to the active Space (issue #25, macOS 26). 1.6.16 healed this
+        // accidentally via an outside-click monitor — this is the same reset,
+        // made deterministic.
+        dismissMenuPanel()
         currentPosition = nil
     }
 
@@ -623,7 +630,11 @@ final class BreakOverlayManager {
             createFloating(position: .menuWindow)
             return
         }
-        panel.hidesOnDeactivate = false
+        // macOS 26: after the system dismisses the panel once, a plain
+        // orderFront no longer re-attaches it to any Space — the window stays
+        // ordered-in but invisible (issue #25). moveToActiveSpace makes the
+        // order-front re-space it onto the user's current Space.
+        panel.collectionBehavior.insert(.moveToActiveSpace)
         panel.orderFrontRegardless()
         repositionMenuPanelIfNeeded(panel)
         fixMenuPanelFrame(panel)
@@ -631,16 +642,65 @@ final class BreakOverlayManager {
     }
 
     /// Close the user-opened MenuBarExtra panel (if visible) and stop pinning.
+    /// Close the panel through the system's own path (SwiftUI dismiss), and
+    /// fall back to real-menu UX for auto-popped flows the system never
+    /// "presented": stay up until the next outside click, then order out.
+    /// The re-space repair in noteSystemMenuPanelOpened keeps icon clicks
+    /// alive after that orderOut (issue #25).
     func dismissMenuPanel() {
         unpinMenuPanel()
         guard let panel = findMenuBarPanel(), panel.isVisible else { return }
-        panel.orderOut(nil)
+        // Defer one runloop turn: callers (confirmReturn etc.) change phase
+        // in the same transaction, and `.id(phase)` rebuilds the content —
+        // a bump inside that transaction gets swallowed by the identity swap
+        // and replayed at the NEXT presentation, killing it (issue #25 tail).
+        DispatchQueue.main.async { [weak self] in
+            self?.appState?.requestMenuPanelDismiss()
+        }
+        setupOutsideClickDismiss(for: panel)
     }
 
     private func unpinMenuPanel() {
         menuPinTimer?.invalidate()
         menuPinTimer = nil
-        findMenuBarPanel(includeHidden: true)?.hidesOnDeactivate = true
+    }
+
+    private var outsideClickMonitor: Any?
+
+    /// One-shot: dismiss the lingering panel on the next click outside it —
+    /// same behavior as a real menu (and as 1.6.16).
+    private func setupOutsideClickDismiss(for panel: NSPanel) {
+        if let monitor = outsideClickMonitor {
+            NSEvent.removeMonitor(monitor)
+            outsideClickMonitor = nil
+        }
+        outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self, weak panel] event in
+            guard let self else { return }
+            guard let panel, panel.isVisible else {
+                if let monitor = self.outsideClickMonitor {
+                    NSEvent.removeMonitor(monitor)
+                    self.outsideClickMonitor = nil
+                }
+                return
+            }
+            // Global monitor events carry screen coordinates.
+            if !panel.frame.contains(event.locationInWindow) {
+                // System path first: if the system still books the panel as
+                // presented, dismiss() closes it and keeps the toggle in
+                // sync. Only orderOut if the panel is still up after that
+                // (the repair in noteSystemMenuPanelOpened covers the rest).
+                self.appState?.requestMenuPanelDismiss()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak panel] in
+                    if let panel, panel.isVisible {
+                        panel.orderOut(nil)
+                    }
+                }
+                if let monitor = self.outsideClickMonitor {
+                    NSEvent.removeMonitor(monitor)
+                    self.outsideClickMonitor = nil
+                }
+            }
+        }
     }
 
     /// The system dismisses the panel on outside clicks; while an alert /
@@ -654,7 +714,11 @@ final class BreakOverlayManager {
 
     private func ensureMenuPanelVisible() {
         guard shouldKeepMenuPanelPinned else { return }
-        guard let panel = findMenuBarPanel(includeHidden: true), !panel.isVisible else { return }
+        guard let panel = findMenuBarPanel(includeHidden: true) else { return }
+        // Not just isVisible: the window can be ordered-in yet detached from
+        // every Space (invisible to the user) — re-front it in that case too.
+        if panel.isVisible && panel.isOnActiveSpace { return }
+        panel.collectionBehavior.insert(.moveToActiveSpace)
         panel.orderFrontRegardless()
         fixMenuPanelFrame(panel)
     }
@@ -677,9 +741,13 @@ final class BreakOverlayManager {
             guard let panel, let content = panel.contentView else { return }
             let hosting = Self.findHostingView(in: content) ?? content
             let fit = hosting.fittingSize
-            guard fit.width > 100, fit.height > 100, fit.height < 2000 else { return }
+            guard fit.width > 100, fit.height > 100, fit.height < 2000 else {
+                return
+            }
             var f = panel.frame
-            guard abs(f.height - fit.height) > 2 || abs(f.width - fit.width) > 2 else { return }
+            guard abs(f.height - fit.height) > 2 || abs(f.width - fit.width) > 2 else {
+                return
+            }
             let topY = f.maxY
             f.size = NSSize(width: ceil(fit.width), height: ceil(fit.height))
             f.origin.y = topY - f.size.height
@@ -718,8 +786,15 @@ final class BreakOverlayManager {
     func noteSystemMenuPanelOpened() {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
             guard let self, let panel = self.findMenuBarPanel() else { return }
+            // Repair hook (issue #25): after any of our ordering ops, the
+            // system's own present can leave the window detached from every
+            // Space — ordered-in but invisible. Detect and re-space it so an
+            // icon click always produces a visible panel.
+            if !panel.isOnActiveSpace {
+                panel.collectionBehavior.insert(.moveToActiveSpace)
+                panel.orderFrontRegardless()
+            }
             MenuPanelAnchor.lastFrame = panel.frame
-            self.fixMenuPanelFrame(panel)
         }
     }
 

@@ -73,9 +73,9 @@ echo "[5/6] Publishing release to GitHub ${REPO}..."
 RELEASE_NOTES="## HealthTick ${TAG}
 
 ### 修复
-- 修复「菜单栏窗口」模式下休息提醒弹窗出现大面积透明、窗口比内容大的问题 (#24 感谢 @Sunior)：弹窗显示时自动校正面板尺寸
-- 休息提醒弹出时不再抢占键盘焦点，打字不会被打断
-- 菜单面板不可用时提供同样式兜底弹窗，全屏应用下也能收到提醒
+- 修复 1.6.17 版本中点击菜单栏图标后弹窗可能不再显示的问题 (#25 感谢 @Zion42)
+- 修复休息提醒弹窗有时不出现在当前桌面/全屏空间的问题
+- 休息结束点「我回来了」后，点击其他位置弹窗会自动收起
 
 ### 下载
 - **Apple Silicon (M1/M2/M3/M4)**: \`HealthTick-${TAG}-Apple-Silicon.dmg\`
@@ -97,32 +97,40 @@ echo "  GitHub release done"
 # Upload to Gitee release repo
 echo "[6/6] Publishing release to Gitee ${GITEE_REPO}..."
 if [ -n "$GITEE_TOKEN" ]; then
-    GITEE_RELEASE_RESP=$(curl -s -X POST \
-        "https://gitee.com/api/v5/repos/${GITEE_REPO}/releases" \
-        -H "Content-Type: application/json" \
-        -H "Authorization: token ${GITEE_TOKEN}" \
-        -d "{
-            \"tag_name\": \"${TAG}\",
-            \"name\": \"HealthTick ${TAG}\",
-            \"body\": \"${RELEASE_NOTES}\",
-            \"target_commitish\": \"main\"
-        }")
+    # Gitee v5 auth: access_token in the request body / form field ("Authorization:
+    # token" headers return an HTML error page). JSON is built with python so the
+    # multi-line release notes get escaped properly.
+    GITEE_RELEASE_ID=$(RELEASE_NOTES="$RELEASE_NOTES" TAG="$TAG" GITEE_REPO="$GITEE_REPO" python3 - <<'PYEOF'
+import json, os, urllib.request
+data = json.dumps({
+    "access_token": os.environ["GITEE_TOKEN"],
+    "tag_name": os.environ["TAG"],
+    "name": "HealthTick " + os.environ["TAG"],
+    "body": os.environ["RELEASE_NOTES"],
+    "target_commitish": "main",
+}).encode()
+req = urllib.request.Request(
+    "https://gitee.com/api/v5/repos/" + os.environ["GITEE_REPO"] + "/releases",
+    data=data, headers={"Content-Type": "application/json"})
+try:
+    print(json.load(urllib.request.urlopen(req)).get("id", ""))
+except Exception:
+    print("")
+PYEOF
+)
 
-    GITEE_RELEASE_ID=$(echo "$GITEE_RELEASE_RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null || true)
-
-    if [ -n "$GITEE_RELEASE_ID" ] && [ "$GITEE_RELEASE_ID" != "None" ]; then
+    if [ -n "$GITEE_RELEASE_ID" ]; then
         for label in Apple-Silicon Intel; do
             DMG_FILE="${STAGE}/HealthTick-${TAG}-${label}.dmg"
             curl -s -X POST \
                 "https://gitee.com/api/v5/repos/${GITEE_REPO}/releases/${GITEE_RELEASE_ID}/attach_files" \
-                -H "Authorization: token ${GITEE_TOKEN}" \
+                -F "access_token=${GITEE_TOKEN}" \
                 -F "file=@${DMG_FILE}" > /dev/null
             echo "  Uploaded HealthTick-${TAG}-${label}.dmg to Gitee"
         done
         echo "  Gitee release done"
     else
         echo "  Warning: Failed to create Gitee release"
-        echo "  Response: ${GITEE_RELEASE_RESP}"
     fi
 else
     echo "  Skipped (no GITEE_TOKEN env var set)"
