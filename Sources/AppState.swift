@@ -306,6 +306,7 @@ final class AppState {
     var menuPanelDismissRequestedAt = Date.distantPast
 
     func requestMenuPanelDismiss() {
+        Probe.log("requestMenuPanelDismiss #\(menuPanelDismissRequest + 1)")
         menuPanelDismissRequestedAt = Date()
         menuPanelDismissRequest += 1
     }
@@ -386,6 +387,15 @@ final class AppState {
         }
         restoreTimerState()
         refreshStats()
+
+        // Warm up the lazily-created MenuBarExtra panel once the scene has
+        // rendered — menuWindow-mode alerts can't show before the panel
+        // object exists (see warmUpMenuPanelIfNeeded). Lives here, not in a
+        // view lifecycle: init runs on EVERY launch path, including
+        // background login launches that never create a window scene.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+            self?.overlayManager.warmUpMenuPanelIfNeeded()
+        }
 
         startQuietCheckTimer()
         setupShortcutMonitors()
@@ -501,6 +511,10 @@ final class AppState {
                 phase = .alerting
                 remainingSeconds = 0
                 saveTimerState()
+                // Re-present the alert UI — without this the app restores to
+                // a phase with no window, no timer, and no way forward except
+                // the user spontaneously opening the menu.
+                overlayManager.showAlert()
             } else {
                 // No confirm needed — go straight to break
                 currentSessionId = db.startSession(workMinutes: config.workMinutes, breakSeconds: config.breakSeconds, dailyGoal: config.dailyGoal)
@@ -585,6 +599,7 @@ final class AppState {
         playAlertSound()
 
         if config.breakConfirm {
+            Probe.log("onWorkDone -> alerting")
             phase = .alerting
             remainingSeconds = 0
             saveTimerState()
@@ -595,11 +610,15 @@ final class AppState {
     }
 
     func confirmBreak() {
+        Probe.log("confirmBreak position=\(config.breakPosition.rawValue)")
         cancelAlertSoundBurst()
         // menuWindow mode keeps the pinned panel — it morphs to the countdown
-        // in place; other modes close it before showing their own break UI.
+        // in place; other modes close it deterministically (force) before
+        // showing their own break UI: a soft dismiss is a no-op on an
+        // auto-popped panel and left it standing next to the break window
+        // (issue #24 final round).
         if config.breakPosition != .menuWindow {
-            overlayManager.dismissMenuPanel()
+            overlayManager.dismissMenuPanel(force: true)
         }
         startBreak()
     }
@@ -627,7 +646,7 @@ final class AppState {
         if config.breakPosition == .menuWindow {
             overlayManager.showMenuBreak(seconds: secs)
         } else {
-            overlayManager.dismissMenuPanel()
+            overlayManager.dismissMenuPanel(force: true)
             overlayManager.show(seconds: secs)
         }
     }
@@ -880,6 +899,12 @@ final class AppState {
     private func autoSave(_ newConfig: AppConfig) {
         guard let old = lastSavedConfig, newConfig != old else { return }
         db.saveConfig(newConfig)
+        // Switching the rest window to menuWindow mid-session: the panel may
+        // not exist yet (never clicked this session) — warm it up now so the
+        // next alert has something to pin.
+        if newConfig.breakPosition == .menuWindow && old.breakPosition != .menuWindow {
+            overlayManager.warmUpMenuPanelIfNeeded()
+        }
         // Only refresh stats when goal changes (affects streak/progress display)
         if newConfig.dailyGoal != old.dailyGoal {
             refreshStats()

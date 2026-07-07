@@ -147,8 +147,10 @@ struct MenuPanelRoot: View {
                 // Expired = a swallowed request replayed on re-presentation;
                 // acting on it would kill the panel the user just opened.
                 guard Date().timeIntervalSince(state.menuPanelDismissRequestedAt) < 0.5 else {
+                    Probe.log("dismissBridge: EXPIRED request ignored")
                     return
                 }
+                Probe.log("dismissBridge: dismiss() executed")
                 dismiss()
             }
     }

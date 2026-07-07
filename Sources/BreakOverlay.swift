@@ -556,13 +556,29 @@ final class BreakOverlayManager {
         }
     }
 
-    /// Auto-show the break reminder in the system MenuBarExtra panel via
-    /// orderFrontRegardless, then immediately repair the panel frame to the
-    /// content's fitting size — the missing step that caused issue #24 (a
-    /// hidden panel keeps its stale frame; new, shorter content leaves a
-    /// transparent gap). Never activates the app or takes key focus.
+    /// Present the break-time alert in the user's chosen break-window style —
+    /// the same dispatch showOffWorkSummary uses. The system MenuBarExtra
+    /// panel is pinned ONLY when the rest window IS the main window; for
+    /// floating/fullscreen users the alert rides the window the break itself
+    /// will use. Auto-popping the panel for them left it stranded next to the
+    /// break window after confirming (issue #24 final round: the panel was
+    /// auto-popped, so the system-path dismiss added for issue #25 is a
+    /// no-op on it — two windows on screen at once).
     func showAlert() {
-        pinMenuPanel()
+        for w in windows { w.orderOut(nil) }
+        windows.removeAll()
+        let position = appState?.config.breakPosition ?? .menuWindow
+        Probe.log("showAlert position=\(position.rawValue)")
+        switch position {
+        case .menuWindow:
+            pinMenuPanel()
+        case .fullscreen:
+            currentPosition = .fullscreen
+            createFullscreen()
+        default:
+            currentPosition = position
+            createFloating(position: position)
+        }
     }
 
     /// Break countdown in menuWindow mode: keep the pinned system panel and
@@ -574,6 +590,7 @@ final class BreakOverlayManager {
     }
 
     func hide() {
+        Probe.log("hide()")
         timer?.invalidate()
         timer = nil
         for w in windows { w.orderOut(nil) }
@@ -615,21 +632,121 @@ final class BreakOverlayManager {
         }
     }
 
+    // MARK: - Panel warm-up (force-create the lazily-built system panel)
+
+    /// SwiftUI builds the MenuBarExtra panel lazily on its FIRST presentation:
+    /// until the user clicks the icon once, the NSPanel object doesn't exist,
+    /// pinMenuPanel has nothing to order front, and a menuWindow-mode alert in
+    /// a fresh session is invisible (probe log 2026-07-06). Warm it up at
+    /// launch: performClick the status button once with the panel forced
+    /// transparent, then dismiss through the system path — the system creates
+    /// the panel, books a clean presented→dismissed cycle, and the user sees
+    /// nothing. One-shot at launch; NOT the repeated performClick pinning
+    /// rejected in issue #24 (focus stealing / toggle desync came from using
+    /// it on a timer against an already-presented panel).
+    func warmUpMenuPanelIfNeeded(attempt: Int = 0) {
+        guard appState?.config.breakPosition == .menuWindow else { return }
+        guard findMenuBarPanel(includeHidden: true) == nil else {
+            Probe.log("warmUp: panel already exists, nothing to do")
+            return
+        }
+        guard attempt < 20 else {
+            Probe.log("warmUp: giving up — status button never materialized")
+            return
+        }
+        guard let button = statusItemButton() else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                self?.warmUpMenuPanelIfNeeded(attempt: attempt + 1)
+            }
+            return
+        }
+        Probe.log("warmUp: performClick on status button (attempt \(attempt))")
+        button.performClick(nil)
+        guard let panel = findMenuBarPanel(includeHidden: true) else {
+            Probe.log("warmUp: performClick did NOT create the panel")
+            return
+        }
+        // Always run the full hidden present→dismiss cycle, even when a
+        // pinned flow is already waiting for the panel. Leaving the
+        // performClick presentation up poisons the ledgers: the system books
+        // it "presented", later tears it down behind AppKit's back, and the
+        // window ends up gone from the window server while isVisible /
+        // isOnActiveSpace still say true (probe log 2026-07-07). The auto-pop
+        // orderFront path after a CLEANLY dismissed cycle is the proven-
+        // stable way to show pinned content — so finish the cycle, then
+        // re-present through pinMenuPanel.
+        panel.alphaValue = 0
+        unpinMenuPanel()  // keep the watchdog from re-fronting mid-cycle
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self, weak panel] in
+            self?.appState?.requestMenuPanelDismiss()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+                guard let panel else { return }
+                Probe.log("warmUp: dismissed, visible=\(panel.isVisible) — restoring alpha")
+                if panel.isVisible { panel.orderOut(nil) }
+                panel.alphaValue = 1
+                // Re-present for a waiting pinned flow — but NOT immediately:
+                // ordering front while the system is still tearing the
+                // dismissed presentation down leaves the window permanently
+                // detached from the window server with isVisible lying true
+                // (probe log 2026-07-07; only a real user click heals it).
+                // 1.5s matches the empirically clean gap.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                    guard let self, self.shouldKeepMenuPanelPinned else { return }
+                    Probe.log("warmUp: teardown settled — re-presenting via pinMenuPanel")
+                    self.pinMenuPanel()
+                }
+            }
+        }
+    }
+
+    /// The status-bar button hosting our icon. Primary source: the window
+    /// StatusItemLocator grabbed from inside the label view. Fallback: scan
+    /// NSApp.windows for the status-bar window class — menu-bar managers
+    /// (iBar) can detach the icon in ways that keep the grabber from ever
+    /// seeing a window. performClick works either way: the action fires
+    /// in-process regardless of where the window is.
+    private func statusItemButton() -> NSButton? {
+        func findButton(in v: NSView) -> NSButton? {
+            if let b = v as? NSButton { return b }
+            for s in v.subviews {
+                if let b = findButton(in: s) { return b }
+            }
+            return nil
+        }
+        if let w = StatusItemLocator.window, let c = w.contentView, let b = findButton(in: c) {
+            return b
+        }
+        for w in NSApp?.windows ?? [] {
+            if String(describing: type(of: w)).contains("StatusBar"),
+               let c = w.contentView, let b = findButton(in: c) {
+                return b
+            }
+        }
+        Probe.log("statusItemButton: none — locator=\(StatusItemLocator.window.map { String(describing: type(of: $0)) } ?? "nil") appWindows=\((NSApp?.windows ?? []).map { String(describing: type(of: $0)) }.joined(separator: ","))")
+        return nil
+    }
+
     // MARK: - Menu panel pinning (direct orderFront + frame repair)
 
     private var menuPinTimer: Timer?
 
     /// Pin the SYSTEM MenuBarExtra panel: order it front (no activation, no
-    /// key focus) and repair its frame to the content's fitting size. Falls
-    /// back to a self-drawn dropdown card if the panel object can't be found.
+    /// key focus) and repair its frame to the content's fitting size.
+    /// The main-window popup is always the REAL panel — never a look-alike
+    /// floating card (issue #24: users want the panel itself). If the panel
+    /// object doesn't exist yet (fresh launch, icon never clicked), the alert
+    /// sound + status icon carry the reminder and the watchdog pins the panel
+    /// the moment it materializes.
     func pinMenuPanel() {
         for w in windows { w.orderOut(nil) }
         windows.removeAll()
         currentPosition = .menuWindow
+        startMenuWatchdog()
         guard let panel = findMenuBarPanel(includeHidden: true) else {
-            createFloating(position: .menuWindow)
+            Probe.log("pinMenuPanel: panel NOT FOUND (not created yet) — watchdog waiting")
             return
         }
+        Probe.log("pinMenuPanel: panel found visible=\(panel.isVisible) onSpace=\(panel.isOnActiveSpace) frame=\(panel.frame)")
         // macOS 26: after the system dismisses the panel once, a plain
         // orderFront no longer re-attaches it to any Space — the window stays
         // ordered-in but invisible (issue #25). moveToActiveSpace makes the
@@ -638,7 +755,6 @@ final class BreakOverlayManager {
         panel.orderFrontRegardless()
         repositionMenuPanelIfNeeded(panel)
         fixMenuPanelFrame(panel)
-        startMenuWatchdog()
     }
 
     /// Close the user-opened MenuBarExtra panel (if visible) and stop pinning.
@@ -647,9 +763,21 @@ final class BreakOverlayManager {
     /// "presented": stay up until the next outside click, then order out.
     /// The re-space repair in noteSystemMenuPanelOpened keeps icon clicks
     /// alive after that orderOut (issue #25).
-    func dismissMenuPanel() {
+    ///
+    /// force: deterministic close for flow hand-offs — the break continues in
+    /// a separate floating/fullscreen window, so a lingering auto-popped
+    /// panel (where the system-path dismiss is a no-op) would sit next to
+    /// the new break window until the next outside click (issue #24 final
+    /// round). The system path still runs first; orderOut only fires if the
+    /// panel is still up after the grace period, and the Space-detach it
+    /// causes on macOS 26 is healed by the noteSystemMenuPanelOpened repair.
+    func dismissMenuPanel(force: Bool = false) {
         unpinMenuPanel()
-        guard let panel = findMenuBarPanel(), panel.isVisible else { return }
+        guard let panel = findMenuBarPanel(), panel.isVisible else {
+            Probe.log("dismissMenuPanel(force=\(force)): panel not visible, no-op")
+            return
+        }
+        Probe.log("dismissMenuPanel(force=\(force)): panel visible, requesting system dismiss")
         // Defer one runloop turn: callers (confirmReturn etc.) change phase
         // in the same transaction, and `.id(phase)` rebuilds the content —
         // a bump inside that transaction gets swallowed by the identity swap
@@ -657,7 +785,18 @@ final class BreakOverlayManager {
         DispatchQueue.main.async { [weak self] in
             self?.appState?.requestMenuPanelDismiss()
         }
-        setupOutsideClickDismiss(for: panel)
+        if force {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak panel] in
+                if let panel, panel.isVisible {
+                    Probe.log("dismissMenuPanel force: grace elapsed, panel still visible -> orderOut")
+                    panel.orderOut(nil)
+                } else {
+                    Probe.log("dismissMenuPanel force: system dismiss worked, no orderOut needed")
+                }
+            }
+        } else {
+            setupOutsideClickDismiss(for: panel)
+        }
     }
 
     private func unpinMenuPanel() {
@@ -685,6 +824,7 @@ final class BreakOverlayManager {
             }
             // Global monitor events carry screen coordinates.
             if !panel.frame.contains(event.locationInWindow) {
+                Probe.log("outsideClickMonitor: outside click at \(event.locationInWindow) -> dismiss + delayed orderOut")
                 // System path first: if the system still books the panel as
                 // presented, dismiss() closes it and keeps the toggle in
                 // sync. Only orderOut if the panel is still up after that
@@ -707,26 +847,60 @@ final class BreakOverlayManager {
     /// menu-mode break rides it, re-show it (orderFront only — no focus).
     private func startMenuWatchdog() {
         menuPinTimer?.invalidate()
-        menuPinTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+        // 0.5s, not 2s: macOS dismisses a system-presented panel on any
+        // outside click while we're pinning it; a 2s re-front gap reads as
+        // "the reminder flashed and died" (probe log 2026-07-06). The check
+        // is a cheap window scan and a no-op while the panel is up.
+        menuPinTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in self?.ensureMenuPanelVisible() }
         }
     }
 
     private func ensureMenuPanelVisible() {
         guard shouldKeepMenuPanelPinned else { return }
-        guard let panel = findMenuBarPanel(includeHidden: true) else { return }
-        // Not just isVisible: the window can be ordered-in yet detached from
-        // every Space (invisible to the user) — re-front it in that case too.
-        if panel.isVisible && panel.isOnActiveSpace { return }
+        guard let panel = findMenuBarPanel(includeHidden: true) else {
+            Probe.log("watchdog: panel still not created")
+            return
+        }
+        // Three ledgers must agree (issue #25 and its 2026-07-07 sequel):
+        // isVisible (AppKit cache), isOnActiveSpace, AND the window server.
+        // A system-side teardown can drop the window from the server while
+        // AppKit still books it visible+onSpace — the user sees nothing and
+        // the two cheap checks pass forever.
+        let appKitOK = panel.isVisible && panel.isOnActiveSpace
+        if appKitOK && isOnScreenPerWindowServer(panel) { return }
+        Probe.log("watchdog: re-front (visible=\(panel.isVisible) onSpace=\(panel.isOnActiveSpace) server=\(isOnScreenPerWindowServer(panel)))")
+        if appKitOK {
+            // Poisoned state: AppKit thinks the panel is up, so a plain
+            // orderFront may no-op. Detach first so the re-order is real.
+            panel.orderOut(nil)
+        }
         panel.collectionBehavior.insert(.moveToActiveSpace)
         panel.orderFrontRegardless()
         fixMenuPanelFrame(panel)
     }
 
+    /// Ground truth from the window server: is this window actually ordered
+    /// in on screen? NSWindow.isVisible is a process-local cache and can lie
+    /// after the system tears a presentation down behind AppKit's back.
+    /// Scans the onscreen list rather than querying by ID —
+    /// CGWindowListCreateDescriptionFromArray returns nothing for windows
+    /// that the onscreen list provably contains (macOS 26, 2026-07-07).
+    private func isOnScreenPerWindowServer(_ panel: NSPanel) -> Bool {
+        let target = panel.windowNumber
+        guard target > 0 else { return false }
+        let on = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
+        return on.contains { ($0[kCGWindowNumber as String] as? NSNumber)?.intValue == target }
+    }
+
     private var shouldKeepMenuPanelPinned: Bool {
         guard let state = appState, !state.isPreview else { return false }
-        if state.phase == .alerting { return true }
+        // Every pinned flow — alert included — requires menuWindow mode now:
+        // floating/fullscreen users get their alert in their own break
+        // window, and re-fronting the panel here would recreate the
+        // double-window bug the watchdog's caller just avoided.
         guard state.config.breakPosition == .menuWindow else { return false }
+        if state.phase == .alerting { return true }
         if state.offWorkSummary != nil { return true }
         return state.phase == .breaking || state.phase == .waiting
     }
@@ -784,8 +958,10 @@ final class BreakOverlayManager {
     /// Called from MenuView.onAppear on every presentation / content rebuild
     /// of the system panel: record the anchor and repair the frame.
     func noteSystemMenuPanelOpened() {
+        Probe.log("noteSystemMenuPanelOpened (MenuView.onAppear)")
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
             guard let self, let panel = self.findMenuBarPanel() else { return }
+            Probe.log("repairHook: visible=\(panel.isVisible) onSpace=\(panel.isOnActiveSpace) frame=\(panel.frame)")
             // Repair hook (issue #25): after any of our ordering ops, the
             // system's own present can leave the window detached from every
             // Space — ordered-in but invisible. Detect and re-space it so an
@@ -820,6 +996,7 @@ final class BreakOverlayManager {
     }
 
     func preview(position: BreakPosition) {
+        Probe.log("preview(\(position.rawValue))")
         hide()
         remaining = 65
 
@@ -973,9 +1150,12 @@ final class BreakOverlayManager {
             hostingView.layer?.masksToBounds = true
             p.contentView = hostingView
 
-            if position == .menuWindow {
+            if position == .menuWindow || appState?.phase == .alerting {
                 // Never touch keyboard focus for the auto-popup — buttons
                 // work on plain clicks; the quick-confirm shortcut is global.
+                // Same rule for the alert card in any position: it pops up
+                // mid-typing, before the user consented to stop working
+                // (issue #24 round one: key-stealing reminders block input).
                 p.orderFrontRegardless()
             } else {
                 p.makeKeyAndOrderFront(nil)
