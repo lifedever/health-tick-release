@@ -213,6 +213,24 @@ private struct MenuTimerCircle: View {
                         }
                         .buttonStyle(.borderless)
                         .handCursor()
+                    } else if state.phase == .waiting {
+                        // Break is over, waiting for the user to confirm return.
+                        // This is a dead-end with no auto-exit — the confirm
+                        // button MUST be here so the user is never stranded even
+                        // when the break overlay isn't the one showing (issue #27).
+                        Button {
+                            state.confirmReturn()
+                        } label: {
+                            HStack(spacing: 3) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.system(size: 11))
+                                Text(L.alertImBack)
+                                    .font(.system(size: 12, weight: .semibold))
+                            }
+                            .foregroundStyle(.blue)
+                        }
+                        .buttonStyle(.borderless)
+                        .handCursor()
                     } else {
                         Text(state.phaseLabel)
                             .font(.system(size: 13))

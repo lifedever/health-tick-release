@@ -23,7 +23,9 @@ struct BreakCardView: View {
 
     private var timerProgress: Double {
         guard state.phase == .breaking else { return 0 }
-        let total = state.config.breakSeconds
+        // Divide by the break actually in progress (may be a long break),
+        // not the fixed normal-break setting (issue #28).
+        let total = state.currentBreakTotalSeconds
         guard total > 0 else { return 0 }
         return Double(state.remainingSeconds) / Double(total)
     }

@@ -332,6 +332,11 @@ final class AppState {
     var todaySkipCount: Int = 0
     var quietRemainingSeconds: Int = 0
     var completedCycles: Int = 0
+    /// Total seconds of the break currently in progress — normal or long break.
+    /// The countdown ring divides by this so it stays accurate for long breaks
+    /// (issue #28: the ring was hardcoded to config.breakSeconds and froze at
+    /// 100% while a longer break counted down from above that value).
+    var currentBreakTotalSeconds: Int = 0
 
     private var currentSessionId: Int64?
     private var currentSessionWorkConfig: Int = 0  // work_minutes at session creation
@@ -637,6 +642,7 @@ final class AppState {
             && completedCycles > 0 && completedCycles % config.longBreakInterval == 0
         let secs = isLongBreak ? config.longBreakSeconds : config.breakSeconds
         remainingSeconds = secs
+        currentBreakTotalSeconds = secs
 
         if let sid = currentSessionId {
             db.endWork(sessionId: sid)
