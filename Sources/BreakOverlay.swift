@@ -973,6 +973,15 @@ final class BreakOverlayManager {
                 panel.orderFrontRegardless()
             }
             MenuPanelAnchor.lastFrame = panel.frame
+            // Frame repair on every content rebuild — the reliable half of the
+            // issue #24 fix. The pin-time repair races the `.id(phase)` tree
+            // commit and silently no-ops when it measures the OLD content;
+            // this hook runs after SwiftUI commits, so it always measures the
+            // new content. Dropped by accident in the 1.6.18 rewrite for
+            // issue #25 (the regression reported back in issue #9), restored
+            // here: setFrame is geometry-only and can't touch the present/
+            // dismiss ledgers that #25's repairs depend on.
+            self.fixMenuPanelFrame(panel)
         }
     }
 
