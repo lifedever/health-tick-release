@@ -1,12 +1,15 @@
 import Foundation
 
-/// Dev-build-only probe log for window-lifecycle forensics (menu panel
-/// flash/disappear investigations). No-op in release builds; writes a
+/// Probe log for window-lifecycle forensics (menu panel flash/disappear
+/// investigations). Active in dev builds (.dev bundle ID) and in diagnostic
+/// test builds (version string contains "test", e.g. 1.6.22-test1) so users
+/// can send back /tmp logs from a repro; no-op in normal releases. Writes a
 /// timestamped line per event to /tmp so a repro session can be correlated
 /// against CGWindowList sampling afterwards.
 @MainActor
 enum Probe {
     private static let enabled = Bundle.main.bundleIdentifier?.hasSuffix(".dev") == true
+        || (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String)?.contains("test") == true
     private static let path = "/tmp/healthtick-dev-probe.log"
     private static let fmt: DateFormatter = {
         let f = DateFormatter()

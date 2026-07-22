@@ -658,11 +658,17 @@ final class AppState {
     }
 
     private func onBreakDone() {
+        Probe.log("onBreakDone -> waiting")
         phase = .waiting
         remainingSeconds = 0
         breakWarning = ""
-        // No overlay call needed: the break UI (pinned menu panel or floating
-        // card) persists across breaking → waiting and morphs to the waiting body.
+        // The break UI (pinned menu panel or floating card) persists across
+        // breaking → waiting and morphs to the waiting body — but the pinned
+        // menu panel keeps its stale (taller) frame across the morph, because
+        // SwiftUI defers all view-layer callbacks on auto-popped panels
+        // (issue #9: transparent gap below the shorter waiting card). Repair
+        // its frame explicitly; no-op for floating/fullscreen break windows.
+        overlayManager.menuPanelContentDidChange()
 
         let actualSeconds: Int?
         if let start = breakStartDate {

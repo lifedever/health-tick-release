@@ -66,6 +66,12 @@ struct MenuView: View {
         }
         .padding(16)
         .frame(width: 240)
+        .onGeometryChange(for: CGSize.self) { $0.size } action: { size in
+            // SwiftUI-layer size report: the panel's AppKit content view is a
+            // MenuBarExtraHostingView whose fittingSize returns .zero, so the
+            // frame repair (issue #9/#24) must be fed from here.
+            state.overlayManager.noteMenuContentSize(size)
+        }
         .onAppear {
             menuBringOtherWindowsToFront()
             // Fires on every open of the system MenuBarExtra panel (and

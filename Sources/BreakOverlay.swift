@@ -756,7 +756,11 @@ final class BreakOverlayManager {
         panel.collectionBehavior.insert(.moveToActiveSpace)
         panel.orderFrontRegardless()
         repositionMenuPanelIfNeeded(panel)
-        fixMenuPanelFrame(panel)
+        // Every pin presents possibly-new content (alert card, break
+        // countdown, summary): size reports from before this moment describe
+        // the previous content and must not drive the repair.
+        noteMenuContentChanged()
+        repairMenuPanelFrame(panel, reason: "pin")
     }
 
     /// Close the user-opened MenuBarExtra panel (if visible) and stop pinning.
@@ -879,7 +883,7 @@ final class BreakOverlayManager {
         }
         panel.collectionBehavior.insert(.moveToActiveSpace)
         panel.orderFrontRegardless()
-        fixMenuPanelFrame(panel)
+        repairMenuPanelFrame(panel, reason: "watchdogRefront")
     }
 
     /// Ground truth from the window server: is this window actually ordered
@@ -907,36 +911,143 @@ final class BreakOverlayManager {
         return state.phase == .breaking || state.phase == .waiting
     }
 
-    /// Resize the panel to its SwiftUI content's fitting size, keeping the
-    /// top edge anchored. A hidden MenuBarExtra panel keeps its stale frame
-    /// when content changes underneath — this repair is what prevents the
-    /// transparent-gap bug (issue #24). Runs async so SwiftUI can commit the
-    /// current phase's content first.
-    private func fixMenuPanelFrame(_ panel: NSPanel) {
-        DispatchQueue.main.async { [weak panel] in
-            guard let panel, let content = panel.contentView else { return }
-            let hosting = Self.findHostingView(in: content) ?? content
-            let fit = hosting.fittingSize
-            guard fit.width > 100, fit.height > 100, fit.height < 2000 else {
+    // MARK: - Menu panel frame repair (issue #24 / #9)
+    //
+    // A pinned (auto-popped) MenuBarExtra panel keeps its stale frame when the
+    // `.id(phase)` content changes underneath: on auto-popped panels SwiftUI
+    // defers onAppear/onGeometryChange until the next SYSTEM presentation
+    // (probe 2026-07-21, macOS 15 AND 26), so no view-layer callback fires
+    // for in-place phase morphs like breaking→waiting — the shorter waiting
+    // card shows a transparent gap below (issue #9). Repair timing is
+    // therefore driven EXPLICITLY (pin calls + AppState phase changes), and
+    // measurement uses two sources:
+    //   1. SwiftUI-reported size (MenuView.onGeometryChange) — exact when it
+    //      arrives, but deferred on auto-popped panels; only trusted when it
+    //      arrived after the last known content change.
+    //   2. Offscreen self-hosted measurement (measureMenuContentOffscreen) —
+    //      the panel's own content view is a MenuBarExtraHostingView (NOT
+    //      named "NSHostingView"!) whose fittingSize AND intrinsicContentSize
+    //      report .zero on macOS 15.7 and 26 alike (user + local probes,
+    //      2026-07-21), so the only reliable measurement is one we host
+    //      ourselves.
+    // No usable source → leave the panel alone: on macOS 26 the system
+    // tracks the panel's content size itself (probe 2026-07-21), and a wrong
+    // setFrame would be worse than the gap. The ≤2pt delta guard keeps every
+    // repair a no-op when the frame is already correct, so systems that
+    // self-heal never see a visual difference. (User-log fidelity check: the
+    // panel frame equals MenuView's ideal size exactly — 436→436, 408→409 —
+    // so measuring the same view with the same state reproduces the frame.)
+
+    /// Latest MenuView content size reported from the SwiftUI layer, with its
+    /// arrival time (freshness gate against deferred/replayed callbacks).
+    private var lastMenuContentSize: CGSize?
+    private var lastMenuSizeReportAt = Date.distantPast
+    /// Set whenever the panel's content is known to have changed identity
+    /// (phase change / pin of possibly-new content); size reports older than
+    /// this describe the PREVIOUS content and must not be trusted.
+    private var lastMenuContentChangeAt = Date.distantPast
+    /// Panel size recorded at the same moment: if the panel's size has moved
+    /// away from this by the time a repair pass runs — and not to a size WE
+    /// set — the system is tracking the content size itself (macOS 26).
+    /// Fighting it triple-flashes the panel (probe 2026-07-21: our setFrame
+    /// vs the system's own resize, alternating), so the repair yields.
+    private var menuSizeAtContentChange: CGSize?
+    private var lastRepairSetSize: CGSize?
+
+    private func sizesRoughlyEqual(_ a: CGSize, _ b: CGSize) -> Bool {
+        abs(a.width - b.width) <= 1 && abs(a.height - b.height) <= 1
+    }
+
+    /// Record a content-identity change: timestamp (invalidates older SwiftUI
+    /// size reports) plus the panel's current size (baseline for the
+    /// system-tracking gate above).
+    private func noteMenuContentChanged() {
+        lastMenuContentChangeAt = Date()
+        menuSizeAtContentChange = findMenuBarPanel(includeHidden: true)?.frame.size
+        lastRepairSetSize = nil
+    }
+
+    func noteMenuContentSize(_ size: CGSize) {
+        lastMenuContentSize = size
+        lastMenuSizeReportAt = Date()
+        Probe.log("noteMenuContentSize: reported=\(size)")
+        guard shouldKeepMenuPanelPinned, let panel = findMenuBarPanel(), panel.isVisible else { return }
+        repairMenuPanelFrame(panel, reason: "sizeReport")
+    }
+
+    /// Explicit repair trigger for in-place content morphs that come with no
+    /// pin call (breaking→waiting, issue #9): schedule two idempotent repair
+    /// passes so a slow SwiftUI commit can't outrun a single-shot measurement.
+    func menuPanelContentDidChange() {
+        noteMenuContentChanged()
+        guard shouldKeepMenuPanelPinned else { return }
+        for delay in [0.15, 0.7] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                guard let self, self.shouldKeepMenuPanelPinned else { return }
+                guard let panel = self.findMenuBarPanel(), panel.isVisible else { return }
+                self.repairMenuPanelFrame(panel, reason: "contentChange+\(delay)")
+            }
+        }
+    }
+
+    /// Resize the panel to its content's measured size, keeping the top edge
+    /// anchored. Runs async so SwiftUI can commit the current phase's content
+    /// first. Geometry-only: never touches the present/dismiss ledgers that
+    /// the issue #25 repairs depend on, and never activates or takes focus.
+    private func repairMenuPanelFrame(_ panel: NSPanel, reason: String) {
+        DispatchQueue.main.async { [weak self, weak panel] in
+            guard let self, let panel else { return }
+            var f = panel.frame
+            // System-tracking gate: the panel size moved since the content
+            // change, and not to a size we set — the system is resizing the
+            // panel itself (macOS 26 does this even for auto-popped panels).
+            // Yield to it; our job is only the frozen-frame case (macOS 15).
+            if let base = self.menuSizeAtContentChange,
+               !self.sizesRoughlyEqual(base, f.size),
+               self.lastRepairSetSize.map({ !self.sizesRoughlyEqual($0, f.size) }) ?? true {
+                Probe.log("repairFrame(\(reason)): system moved \(base) -> \(f.size), yielding")
                 return
             }
-            var f = panel.frame
+            var size: CGSize?
+            var source = "none"
+            if let s = self.lastMenuContentSize, self.lastMenuSizeReportAt > self.lastMenuContentChangeAt {
+                size = s
+                source = "swiftui"
+            } else if let measured = self.measureMenuContentOffscreen() {
+                size = measured
+                source = "offscreen"
+            }
+            if let cv = panel.contentView {
+                let subs = cv.subviews.map { "\(type(of: $0)):\($0.frame.size)" }.joined(separator: " ")
+                Probe.log("repairFrame(\(reason)): contentView=\(cv.frame.size) subs=[\(subs)]")
+            }
+            guard let fit = size, fit.height < 2000 else {
+                Probe.log("repairFrame(\(reason)): no usable measurement — leaving panel alone, frame=\(panel.frame)")
+                return
+            }
             guard abs(f.height - fit.height) > 2 || abs(f.width - fit.width) > 2 else {
+                Probe.log("repairFrame(\(reason)): no-op [\(source)] delta ≤2pt, frame=\(f)")
                 return
             }
             let topY = f.maxY
             f.size = NSSize(width: ceil(fit.width), height: ceil(fit.height))
             f.origin.y = topY - f.size.height
             panel.setFrame(f, display: true)
+            self.lastRepairSetSize = f.size
+            Probe.log("repairFrame(\(reason)): setFrame -> \(f) [\(source)]")
         }
     }
 
-    private static func findHostingView(in view: NSView) -> NSView? {
-        if String(describing: type(of: view)).contains("NSHostingView") { return view }
-        for sub in view.subviews {
-            if let h = findHostingView(in: sub) { return h }
-        }
-        return nil
+    /// Measure MenuView's ideal size with a throwaway self-hosted
+    /// NSHostingView sharing the live AppState. Never attached to a window,
+    /// so none of MenuView's lifecycle callbacks (onAppear, onGeometryChange)
+    /// fire — this is a pure synchronous layout query.
+    private func measureMenuContentOffscreen() -> CGSize? {
+        guard let state = appState else { return nil }
+        let host = NSHostingView(rootView: MenuView().environment(state))
+        let size = host.fittingSize
+        guard size.width > 100, size.height > 100 else { return nil }
+        return size
     }
 
     /// If the panel has never been positioned (or its frame is off every
@@ -973,15 +1084,12 @@ final class BreakOverlayManager {
                 panel.orderFrontRegardless()
             }
             MenuPanelAnchor.lastFrame = panel.frame
-            // Frame repair on every content rebuild — the reliable half of the
-            // issue #24 fix. The pin-time repair races the `.id(phase)` tree
-            // commit and silently no-ops when it measures the OLD content;
-            // this hook runs after SwiftUI commits, so it always measures the
-            // new content. Dropped by accident in the 1.6.18 rewrite for
-            // issue #25 (the regression reported back in issue #9), restored
-            // here: setFrame is geometry-only and can't touch the present/
-            // dismiss ledgers that #25's repairs depend on.
-            self.fixMenuPanelFrame(panel)
+            // Frame repair on system presentations. NOTE (probe 2026-07-21):
+            // this hook only fires when the SYSTEM presents the panel (user
+            // click / performClick) — on auto-popped panels SwiftUI defers
+            // onAppear until the next system presentation, so in-place phase
+            // morphs are covered by menuPanelContentDidChange instead.
+            self.repairMenuPanelFrame(panel, reason: "onAppear")
         }
     }
 
