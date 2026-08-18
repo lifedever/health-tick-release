@@ -866,6 +866,45 @@ final class AppState {
 
     private var pendingBadge: Badge?
 
+    /// Completes a break that the user took before the app's due reminder.
+    func markBreakCompleted() {
+        guard phase == .alerting else { return }
+        Probe.log("markBreakCompleted phase=\(phase.rawValue)")
+        timer?.invalidate()
+        cancelAlertSoundBurst()
+        overlayManager.hide()
+
+        if let sid = currentSessionId {
+            db.endWork(sessionId: sid)
+            db.startSessionBreak(sessionId: sid)
+            db.endSessionBreak(sessionId: sid, actualSeconds: nil, skipped: false)
+        }
+
+        completedCycles += 1
+        let oldStreak = maxStreak
+        let oldTotal = totalCount
+        db.addRecord()
+        refreshStats()
+        let badge = detectNewBadge(oldStreak: oldStreak, oldTotal: oldTotal)
+        currentSessionId = nil
+        breakStartDate = nil
+
+        if config.autoPauseOnGoal && todayDone >= config.dailyGoal {
+            goalAutoStopped = true
+            phase = .paused
+            remainingSeconds = 0
+            saveTimerState()
+        } else {
+            startWork()
+        }
+
+        if let badge {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                self?.showBadgeCelebration(badge)
+            }
+        }
+    }
+
     func confirmReturn() {
         overlayManager.hide()
         let badge = pendingBadge

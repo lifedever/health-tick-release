@@ -107,6 +107,7 @@ struct L {
     static var healthCheckIn: String { isZh ? "健康打卡" : "Health Check-in" }
     static var defaultBreakReminder: String { isZh ? "该休息了" : "Time for a break" }
     static var alertConfirmBreak: String { isZh ? "好的，我去休息" : "OK, I'll take a break" }
+    static var alertAlreadyRested: String { isZh ? "我已提前休息" : "I already rested" }
     static var alertSkipBreak: String { isZh ? "这次先不休息" : "Skip this break" }
     static var alertSnoozeLabel: String { isZh ? "几分钟后再休息？" : "Take the break in…" }
     static func alertSnoozeMinutes(_ m: Int) -> String { isZh ? "\(m) 分钟" : "\(m) min" }

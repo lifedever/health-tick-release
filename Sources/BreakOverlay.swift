@@ -153,6 +153,19 @@ struct BreakCardView: View {
         .animation(.easeOut(duration: 0.15), value: skipHovering)
     }
 
+    @ViewBuilder
+    private func completedBreakActionButton(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: "checkmark.circle")
+                .font(.system(size: fullscreen ? 14 : 12, weight: .medium))
+                .foregroundStyle(fullscreen
+                    ? AnyShapeStyle(.white.opacity(0.78))
+                    : AnyShapeStyle(.primary.opacity(0.72)))
+        }
+        .buttonStyle(.plain)
+        .handCursor()
+    }
+
     /// Snooze row for the alerting phase (issue #35): a small label above
     /// three one-click duration pills. Sits between the primary confirm and
     /// the skip pill — a middle tier: unlike skipping, the break is still
@@ -260,12 +273,17 @@ struct BreakCardView: View {
         .padding(.top, 16)
 
         snoozeRow
-            .padding(.top, 14)
+            .padding(.top, 12)
 
         secondaryActionButton(L.alertSkipBreak) {
             state.skipBreakFromAlert()
         }
         .padding(.top, 12)
+
+        completedBreakActionButton(L.alertAlreadyRested) {
+            state.markBreakCompleted()
+        }
+        .padding(.top, 10)
 
         Spacer().frame(height: 24)
     }
@@ -399,6 +417,10 @@ struct BreakCardView: View {
 
         secondaryActionButton(L.alertSkipBreak) {
             state.skipBreakFromAlert()
+        }
+
+        completedBreakActionButton(L.alertAlreadyRested) {
+            state.markBreakCompleted()
         }
     }
 
