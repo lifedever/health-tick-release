@@ -354,8 +354,7 @@ struct SystemTab: View {
                     } else {
                         Button {
                             confirmReset(title: L.resetAllData, message: L.resetDataWarning) {
-                                Database.shared.resetAllData()
-                                state.refreshStats()
+                                state.resetAllRecords()
                                 withAnimation { resetDataDone = true }
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
                                     withAnimation { resetDataDone = false }

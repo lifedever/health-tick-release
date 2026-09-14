@@ -1182,6 +1182,20 @@ final class AppState {
         }
     }
 
+    /// Wipes the records. Deleting the rows alone isn't enough: `currentSessionId`
+    /// would still point at a session row that no longer exists (the in-progress
+    /// cycle would book its work into a deleted row at endWork), and
+    /// `currentSessionWorkMinutes` reads off the timer rather than the DB, so
+    /// today's and this week's work minutes would keep counting the current cycle
+    /// after a reset that is supposed to zero everything.
+    func resetAllRecords() {
+        db.resetAllData()
+        currentSessionId = nil
+        completedCycles = 0
+        refreshStats()
+        Probe.log("resetAllRecords -> today=\(todayDone) streak=\(currentStreak) max=\(maxStreak) total=\(totalCount) workMin=\(todayWorkMinutes) weekWork=\(weekWorkData.map(\.1))")
+    }
+
     func resetToDefaults() {
         db.resetConfig()
         config = db.loadConfig()
