@@ -197,13 +197,46 @@ struct L {
     static var laterAction: String { isZh ? "稍后再说" : "Later" }
     static var exportData: String { isZh ? "导出数据" : "Export Data" }
     static var exportAction: String { isZh ? "导出" : "Export" }
-    static var exportDataDesc: String { isZh ? "导出所有打卡记录和设置（加密）" : "Export all records and settings (encrypted)" }
-    static var exportPasswordTitle: String { isZh ? "设置导出密码" : "Set Export Password" }
-    static var exportPasswordMsg: String { isZh ? "数据将使用此密码加密，导入时需要输入相同密码。" : "Data will be encrypted with this password. You'll need it to import." }
-    static var exportPasswordPlaceholder: String { isZh ? "输入密码" : "Enter password" }
+    static var exportDataDesc: String { isZh ? "导出所有打卡记录和设置" : "Export all records and settings" }
     static var exportSuccess: String { isZh ? "数据导出成功" : "Data exported successfully" }
     static var exportFailed: String { isZh ? "导出失败" : "Export failed" }
     static var passwordEmpty: String { isZh ? "密码不能为空" : "Password cannot be empty" }
+    static var importData: String { isZh ? "导入数据" : "Import Data" }
+    static var importAction: String { isZh ? "导入" : "Import" }
+    static var importDataDesc: String { isZh ? "从导出的文件恢复记录和设置" : "Restore records and settings from an exported file" }
+    static var importConfirmTitle: String { isZh ? "导入数据" : "Import Data" }
+    static var importConfirmMsg: String { isZh ? "打卡记录会和现有记录合并，重复的自动跳过。" : "Records are merged with what you already have; duplicates are skipped." }
+    static var importPasswordTitle: String { isZh ? "输入密码" : "Enter Password" }
+    static var importPasswordMsg: String { isZh ? "这是旧版本导出的加密文件，需要当时设置的密码。" : "This file came from an older version and needs the password set back then." }
+    static var importPasswordPlaceholder: String { isZh ? "输入密码" : "Enter password" }
+    static var importIncludeConfig: String { isZh ? "同时导入设置（覆盖当前设置）" : "Import settings too (overwrites current)" }
+    static var importDone: String { isZh ? "导入完成" : "Import Done" }
+    static var importFailed: String { isZh ? "导入失败" : "Import failed" }
+    static func importSummary(records: Int, sessions: Int, skipped: Int, rejected: Int) -> String {
+        var text = isZh
+            ? "新增 \(records) 条打卡、\(sessions) 条工作记录。"
+            : "Added \(records) check-ins and \(sessions) work sessions."
+        if skipped > 0 {
+            text += isZh ? "重复的 \(skipped) 条已跳过。" : " Skipped \(skipped) duplicates."
+        }
+        if rejected > 0 {
+            text += isZh ? "另有 \(rejected) 条日期异常，没有导入。" : " \(rejected) rows had an unusable date and were left out."
+        }
+        return text
+    }
+    static var importFileTooLarge: String { isZh ? "文件太大，不像是导出的数据文件。" : "That file is too large to be an exported data file." }
+    static var importWrongPassword: String { isZh ? "解不开这个文件，密码可能不对。" : "Couldn't open this file — check the password." }
+    static var exportSerializationFailed: String { isZh ? "数据打包失败" : "Couldn't package the data" }
+    static func importBackupHint(_ path: String) -> String {
+        isZh ? "导入前的数据已备份到 \(path)" : "Data before import was backed up to \(path)"
+    }
+    static var importMalformed: String { isZh ? "文件内容不完整" : "File content is incomplete" }
+    static func importUnsupportedVersion(_ v: Int) -> String {
+        isZh ? "这份文件来自更新的版本（v\(v)），升级 HealthTick 后再导入。"
+             : "This file was created by a newer version (v\(v)). Update HealthTick to import it."
+    }
+    static var importBackupFailed: String { isZh ? "备份当前数据失败，已中止导入。" : "Couldn't back up current data. Import canceled." }
+    static var importWriteFailed: String { isZh ? "写入失败，已回滚到导入前的状态。" : "Write failed. Rolled back to the state before import." }
 
     // MARK: - Settings - Reminders
     static var reminderHint: String { isZh ? "休息时随机展示一条提醒" : "A random reminder is shown during breaks" }

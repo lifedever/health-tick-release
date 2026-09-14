@@ -5,16 +5,15 @@ import CommonCrypto
 enum DataExporter {
     enum ExportError: LocalizedError {
         case serializationFailed
-        case encryptionFailed
+        case keyDerivationFailed
         case decryptionFailed
         case invalidFormat
 
         var errorDescription: String? {
             switch self {
-            case .serializationFailed: return "Data serialization failed"
-            case .encryptionFailed: return "Encryption failed"
-            case .decryptionFailed: return "Decryption failed – wrong password?"
-            case .invalidFormat: return "Invalid file format"
+            case .serializationFailed: return L.exportSerializationFailed
+            case .keyDerivationFailed, .decryptionFailed: return L.importWrongPassword
+            case .invalidFormat: return L.importMalformed
             }
         }
     }
@@ -22,30 +21,25 @@ enum DataExporter {
     private static let saltLength = 16
     private static let iterations: UInt32 = 100_000
 
-    /// Encrypt data dict with user password → Data ready to write to .htdata file
-    static func export(data: [String: Any], password: String) throws -> Data {
+    /// Plain JSON. Up to v1.6.31 the export was AES-GCM encrypted with a password
+    /// the user chose; files written by those builds still import through
+    /// `decrypt`, so nobody's old backup turns into a brick.
+    static func export(data: [String: Any]) throws -> Data {
         guard JSONSerialization.isValidJSONObject(data),
-              let json = try? JSONSerialization.data(withJSONObject: data, options: [.sortedKeys]) else {
+              let json = try? JSONSerialization.data(withJSONObject: data, options: [.sortedKeys, .prettyPrinted]) else {
             throw ExportError.serializationFailed
         }
-
-        let salt = randomBytes(count: saltLength)
-        let key = try deriveKey(password: password, salt: salt)
-
-        guard let sealedBox = try? AES.GCM.seal(json, using: key) else {
-            throw ExportError.encryptionFailed
-        }
-
-        // File format: salt + nonce + ciphertext + tag
-        var result = Data()
-        result.append(salt)
-        result.append(contentsOf: sealedBox.nonce)
-        result.append(sealedBox.ciphertext)
-        result.append(sealedBox.tag)
-        return result
+        return json
     }
 
-    /// Decrypt .htdata file → data dict (for future import)
+    /// Reads a plain-JSON export. nil means the bytes aren't JSON — the caller
+    /// then treats the file as one of the older encrypted ones and asks for a
+    /// password.
+    static func parse(fileData: Data) -> [String: Any]? {
+        (try? JSONSerialization.jsonObject(with: fileData)) as? [String: Any]
+    }
+
+    /// Decrypts a pre-1.6.32 export.
     static func decrypt(fileData: Data, password: String) throws -> [String: Any] {
         let nonceLength = 12
         let tagLength = 16
@@ -93,13 +87,7 @@ enum DataExporter {
                 }
             }
         }
-        guard status == kCCSuccess else { throw ExportError.encryptionFailed }
+        guard status == kCCSuccess else { throw ExportError.keyDerivationFailed }
         return SymmetricKey(data: derivedKey)
-    }
-
-    private static func randomBytes(count: Int) -> Data {
-        var bytes = Data(count: count)
-        _ = bytes.withUnsafeMutableBytes { SecRandomCopyBytes(kSecRandomDefault, count, $0.baseAddress!) }
-        return bytes
     }
 }

@@ -692,10 +692,12 @@ final class Database {
 
     // MARK: - Export
 
+    static let exportVersion = 1
+
     func exportAllData() -> [String: Any] {
         let iso = ISO8601DateFormatter()
         var result: [String: Any] = [
-            "version": 1,
+            "version": Self.exportVersion,
             "exportDate": iso.string(from: Date())
         ]
 
@@ -764,7 +766,271 @@ final class Database {
         return result
     }
 
+    // MARK: - Import
+
+    struct ImportSummary {
+        var recordsAdded = 0
+        var recordsSkipped = 0
+        var sessionsAdded = 0
+        var sessionsSkipped = 0
+        var rejected = 0
+        var configApplied = false
+        var backupPath = ""
+    }
+
+    enum ImportError: LocalizedError {
+        case malformed
+        case unsupportedVersion(Int)
+        case backupFailed
+        case writeFailed
+
+        var errorDescription: String? {
+            switch self {
+            case .malformed: return L.importMalformed
+            case .unsupportedVersion(let v): return L.importUnsupportedVersion(v)
+            case .backupFailed: return L.importBackupFailed
+            case .writeFailed: return L.importWriteFailed
+            }
+        }
+    }
+
+    /// Snapshot the live DB into `backups/`. VACUUM INTO folds the WAL into the
+    /// copy, so it stays complete even though the connection never checkpoints.
+    @discardableResult
+    func backupDatabase() throws -> String {
+        let dir = (dbPath as NSString).deletingLastPathComponent + "/backups"
+        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        let fmt = DateFormatter()
+        // Pinned locale: this is a file name, and a non-Gregorian system calendar
+        // would otherwise stamp it with that calendar's year.
+        fmt.locale = Locale(identifier: "en_US_POSIX")
+        fmt.dateFormat = "yyyyMMdd-HHmmss"
+        let stamp = fmt.string(from: Date())
+        var path = dir + "/data-\(stamp).db"
+        var suffix = 2
+        while FileManager.default.fileExists(atPath: path) {
+            path = dir + "/data-\(stamp)-\(suffix).db"
+            suffix += 1
+        }
+        // VACUUM INTO takes no parameters, so the path is quoted by hand.
+        guard exec("VACUUM INTO '\(path.replacingOccurrences(of: "'", with: "''"))'") else {
+            throw ImportError.backupFailed
+        }
+        return path
+    }
+
+    func importData(_ payload: [String: Any], includeConfig: Bool) throws -> ImportSummary {
+        guard let version = (payload["version"] as? NSNumber)?.intValue, version >= 1 else {
+            throw ImportError.malformed
+        }
+        guard version <= Self.exportVersion else { throw ImportError.unsupportedVersion(version) }
+
+        var summary = ImportSummary()
+        summary.backupPath = try backupDatabase()
+
+        guard exec("BEGIN IMMEDIATE") else { throw ImportError.writeFailed }
+        do {
+            if let rows = payload["records"] as? [[String: Any]] {
+                try importRecords(rows, into: &summary)
+            }
+            if let rows = payload["sessions"] as? [[String: Any]] {
+                try importSessions(rows, into: &summary)
+            }
+            if includeConfig, let config = payload["config"] as? [String: String] {
+                try importConfig(config)
+                summary.configApplied = true
+            }
+        } catch {
+            exec("ROLLBACK")
+            throw error
+        }
+        guard exec("COMMIT") else {
+            exec("ROLLBACK")
+            throw ImportError.writeFailed
+        }
+        return summary
+    }
+
+    /// Rows are matched as a multiset on (timestamp, date): a day that legitimately
+    /// holds several identical rows keeps all of them, and re-importing the same
+    /// file twice adds nothing.
+    private func importRecords(_ rows: [[String: Any]], into summary: inout ImportSummary) throws {
+        var existing = countMap("SELECT timestamp || char(1) || date FROM records")
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "INSERT INTO records (timestamp, date) VALUES (?, ?)", -1, &stmt, nil) == SQLITE_OK else {
+            throw ImportError.writeFailed
+        }
+        defer { sqlite3_finalize(stmt) }
+
+        let latestDate = Self.latestImportableDate()
+        for row in rows {
+            guard let ts = row["timestamp"] as? String, let date = row["date"] as? String else { continue }
+            guard Self.isImportableDate(date, notAfter: latestDate) else {
+                summary.rejected += 1
+                continue
+            }
+            let key = ts + "\u{01}" + date
+            if let n = existing[key], n > 0 {
+                existing[key] = n - 1
+                summary.recordsSkipped += 1
+                continue
+            }
+            sqlite3_reset(stmt)
+            sqlite3_clear_bindings(stmt)
+            bindText(stmt, 1, ts)
+            bindText(stmt, 2, date)
+            guard sqlite3_step(stmt) == SQLITE_DONE else { throw ImportError.writeFailed }
+            summary.recordsAdded += 1
+        }
+    }
+
+    /// Same multiset rule, keyed on (date, work_start).
+    private func importSessions(_ rows: [[String: Any]], into summary: inout ImportSummary) throws {
+        var existing = countMap("SELECT date || char(1) || work_start FROM sessions")
+        let sql = """
+            INSERT INTO sessions (date, work_start, work_end, work_minutes, break_start, break_end,
+                                  break_minutes, break_actual_seconds, skipped, daily_goal)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { throw ImportError.writeFailed }
+        defer { sqlite3_finalize(stmt) }
+
+        let latestDate = Self.latestImportableDate()
+        for row in rows {
+            guard let date = row["date"] as? String, let workStart = row["work_start"] as? String else { continue }
+            guard Self.isImportableDate(date, notAfter: latestDate) else {
+                summary.rejected += 1
+                continue
+            }
+            let key = date + "\u{01}" + workStart
+            if let n = existing[key], n > 0 {
+                existing[key] = n - 1
+                summary.sessionsSkipped += 1
+                continue
+            }
+            sqlite3_reset(stmt)
+            sqlite3_clear_bindings(stmt)
+            bindText(stmt, 1, date)
+            bindText(stmt, 2, workStart)
+            bindOptionalText(stmt, 3, row["work_end"] as? String)
+            sqlite3_bind_int(stmt, 4, int32(row["work_minutes"]))
+            bindOptionalText(stmt, 5, row["break_start"] as? String)
+            bindOptionalText(stmt, 6, row["break_end"] as? String)
+            sqlite3_bind_int(stmt, 7, int32(row["break_minutes"]))
+            if let secs = (row["break_actual_seconds"] as? NSNumber)?.intValue {
+                sqlite3_bind_int(stmt, 8, Int32(clamping: secs))
+            } else {
+                sqlite3_bind_null(stmt, 8)
+            }
+            sqlite3_bind_int(stmt, 9, int32(row["skipped"]))
+            sqlite3_bind_int(stmt, 10, int32(row["daily_goal"], default: 8))
+            guard sqlite3_step(stmt) == SQLITE_DONE else { throw ImportError.writeFailed }
+            summary.sessionsAdded += 1
+        }
+    }
+
+    /// `streakDays` walks records by `date DESC` and stops at the first day that
+    /// missed its goal, so one row dated "2099-01-01" — or anything that isn't a
+    /// date at all — would sort to the front and wipe the streak. Only well-formed
+    /// dates up to tomorrow (leaving slack for time zones) get in.
+    private static func isImportableDate(_ s: String, notAfter latest: String) -> Bool {
+        let b = Array(s.utf8)
+        guard b.count == 10 else { return false }
+        for (i, ch) in b.enumerated() {
+            if i == 4 || i == 7 {
+                guard ch == UInt8(ascii: "-") else { return false }
+            } else {
+                guard ch >= UInt8(ascii: "0"), ch <= UInt8(ascii: "9") else { return false }
+            }
+        }
+        let month = Int(s[s.index(s.startIndex, offsetBy: 5)..<s.index(s.startIndex, offsetBy: 7)]) ?? 0
+        let day = Int(s[s.index(s.startIndex, offsetBy: 8)...]) ?? 0
+        guard (1...12).contains(month), (1...31).contains(day) else { return false }
+        // yyyy-MM-dd sorts lexicographically the same way it sorts chronologically
+        return s <= latest
+    }
+
+    private static func latestImportableDate() -> String {
+        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date()
+        return dateFmt().string(from: tomorrow)
+    }
+
+    /// Values the timer runs on, clamped to the ranges the settings UI allows —
+    /// an imported `work_minutes` of 999999999 would otherwise schedule a tick
+    /// that never fires.
+    private static let configRanges: [String: ClosedRange<Int>] = [
+        "work_minutes": 1...120,
+        "saved_work_minutes": 1...120,
+        "break_seconds": 20...900,
+        "saved_break_seconds": 20...900,
+        "daily_goal": 1...20,
+        "long_break_interval": 2...8,
+        "long_break_seconds": 300...1800,
+        "pre_break_notice_seconds": 0...3600,
+        "pre_break_notice_long_seconds": 0...3600,
+        "alert_sound_repeat_count": 1...10,
+    ]
+
+    private func importConfig(_ config: [String: String]) throws {
+        let excludeKeys: Set<String> = ["timer_phase", "timer_target_time", "timer_paused_remaining", "overtime_active"]
+        var stmt: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)", -1, &stmt, nil) == SQLITE_OK else {
+            throw ImportError.writeFailed
+        }
+        defer { sqlite3_finalize(stmt) }
+
+        for (key, rawValue) in config where !excludeKeys.contains(key) {
+            var value = rawValue
+            if let range = Self.configRanges[key] {
+                guard let n = Int(rawValue) else { continue }
+                value = String(min(max(n, range.lowerBound), range.upperBound))
+            }
+            sqlite3_reset(stmt)
+            sqlite3_clear_bindings(stmt)
+            bindText(stmt, 1, key)
+            bindText(stmt, 2, value)
+            guard sqlite3_step(stmt) == SQLITE_DONE else { throw ImportError.writeFailed }
+        }
+    }
+
     // MARK: - Helpers
+
+    private static let sqliteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+
+    /// How many times each key occurs — the existing side of the multiset merge.
+    private func countMap(_ sql: String) -> [String: Int] {
+        var map: [String: Int] = [:]
+        var stmt: OpaquePointer?
+        if sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK {
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                if let c = sqlite3_column_text(stmt, 0) {
+                    map[String(cString: c), default: 0] += 1
+                }
+            }
+        }
+        sqlite3_finalize(stmt)
+        return map
+    }
+
+    private func bindText(_ stmt: OpaquePointer?, _ idx: Int32, _ value: String) {
+        sqlite3_bind_text(stmt, idx, value, -1, Self.sqliteTransient)
+    }
+
+    private func bindOptionalText(_ stmt: OpaquePointer?, _ idx: Int32, _ value: String?) {
+        if let value {
+            bindText(stmt, idx, value)
+        } else {
+            sqlite3_bind_null(stmt, idx)
+        }
+    }
+
+    /// Clamping instead of `Int32(...)` — the value comes from an imported file
+    /// and an out-of-range one would trap.
+    private func int32(_ value: Any?, default def: Int32 = 0) -> Int32 {
+        guard let n = (value as? NSNumber)?.intValue else { return def }
+        return Int32(clamping: n)
+    }
 
     private func queryInt(_ sql: String) -> Int {
         var stmt: OpaquePointer?

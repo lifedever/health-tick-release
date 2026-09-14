@@ -1196,6 +1196,23 @@ final class AppState {
         Probe.log("resetAllRecords -> today=\(todayDone) streak=\(currentStreak) max=\(maxStreak) total=\(totalCount) workMin=\(todayWorkMinutes) weekWork=\(weekWorkData.map(\.1))")
     }
 
+    /// An import writes straight to the DB, so pull it back into memory — otherwise
+    /// the stale in-memory config would autosave right over what was just imported.
+    func reloadAfterImport(configChanged: Bool) {
+        if configChanged {
+            config = db.loadConfig()
+            lastSavedConfig = config
+            L.lang = config.language
+            Self.applyAppearance(config.appearance)
+            setupShortcutMonitors()
+            checkQuietHours()
+            if config.breakPosition == .menuWindow {
+                overlayManager.warmUpMenuPanelIfNeeded()
+            }
+        }
+        refreshStats()
+    }
+
     func resetToDefaults() {
         db.resetConfig()
         config = db.loadConfig()

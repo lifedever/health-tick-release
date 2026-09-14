@@ -171,6 +171,7 @@ struct SystemTab: View {
     @State private var resetSettingsDone = false
     @State private var resetDataDone = false
     @State private var exportDone = false
+    @State private var importDone = false
     @State private var showShortcutHelp = false
     // 开机自启开关的唯一事实源：SMAppService 状态不可观察，必须镜像到 @State
     // 驱动渲染，否则 NSSwitch 视觉状态会在重渲染间隙漂移（issue #32）
@@ -313,6 +314,37 @@ struct SystemTab: View {
                 .padding(.vertical, 6)
                 Divider().padding(.leading, rowContentInset)
                 HStack(spacing: 10) {
+                    settingIcon("square.and.arrow.down", .teal)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(L.importData)
+                            .font(.callout)
+                        Text(L.importDataDesc)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if importDone {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                    } else {
+                        Button {
+                            importData()
+                        } label: {
+                            Text(L.importAction)
+                                .font(.caption)
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 4)
+                                .background(.teal.gradient, in: Capsule())
+                        }
+                        .buttonStyle(.borderless)
+                        .handCursor()
+                    }
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 6)
+                Divider().padding(.leading, rowContentInset)
+                HStack(spacing: 10) {
                     settingIcon("square.and.arrow.up", .blue)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(L.exportData)
@@ -437,41 +469,20 @@ struct SystemTab: View {
     }
 
     private func exportData() {
-        // 1. Password input
-        let alert = NSAlert()
-        alert.messageText = L.exportPasswordTitle
-        alert.informativeText = L.exportPasswordMsg
-        alert.alertStyle = .informational
-        alert.addButton(withTitle: "OK")
-        alert.addButton(withTitle: L.cancel)
-
-        let passwordField = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
-        passwordField.placeholderString = L.exportPasswordPlaceholder
-        alert.accessoryView = passwordField
-        alert.window.initialFirstResponder = passwordField
-
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-        let password = passwordField.stringValue
-        guard !password.isEmpty else {
-            let warn = NSAlert()
-            warn.messageText = L.passwordEmpty
-            warn.alertStyle = .warning
-            warn.runModal()
-            return
-        }
-
-        // 2. Save panel
         let panel = NSSavePanel()
         panel.allowedContentTypes = []
         panel.allowsOtherFileTypes = true
-        panel.nameFieldStringValue = "HealthTick-\(Database.todayString()).htdata"
+        // Down to the second: exporting twice in one day is normal, and a
+        // date-only name would just collide.
+        let stamp = DateFormatter()
+        stamp.locale = Locale(identifier: "en_US_POSIX")
+        stamp.dateFormat = "yyyy-MM-dd-HHmmss"
+        panel.nameFieldStringValue = "HealthTick-\(stamp.string(from: Date())).htdata"
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
-        // 3. Export
         do {
             let data = Database.shared.exportAllData()
-            let encrypted = try DataExporter.export(data: data, password: password)
-            try encrypted.write(to: url)
+            try DataExporter.export(data: data).write(to: url)
             withAnimation { exportDone = true }
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
                 withAnimation { exportDone = false }
@@ -483,6 +494,102 @@ struct SystemTab: View {
             errAlert.alertStyle = .critical
             errAlert.runModal()
         }
+    }
+
+    private func importData() {
+        // 1. Pick the .htdata file
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        // An export of years of use is well under a megabyte; refuse anything huge
+        // rather than pulling a mis-picked video into memory whole.
+        let maxBytes = 20 * 1024 * 1024
+        let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+        guard size > 0, size <= maxBytes else {
+            showImportError(size > maxBytes ? L.importFileTooLarge : L.importMalformed)
+            return
+        }
+        guard let fileData = try? Data(contentsOf: url) else {
+            showImportError(L.importMalformed)
+            return
+        }
+
+        // 2. Exports are plain JSON now; anything that doesn't parse is treated as
+        //    a pre-1.6.32 encrypted file and asks for the password it was made with.
+        let plain = DataExporter.parse(fileData: fileData)
+        let needsPassword = plain == nil
+
+        let alert = NSAlert()
+        alert.messageText = needsPassword ? L.importPasswordTitle : L.importConfirmTitle
+        alert.informativeText = needsPassword ? L.importPasswordMsg : L.importConfirmMsg
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: L.cancel)
+
+        let passwordField = NSSecureTextField(frame: NSRect(x: 0, y: 28, width: 260, height: 24))
+        passwordField.placeholderString = L.importPasswordPlaceholder
+        let configCheck = NSButton(checkboxWithTitle: L.importIncludeConfig, target: nil, action: nil)
+        configCheck.frame = NSRect(x: 0, y: 0, width: 260, height: 20)
+        configCheck.state = .off
+
+        let accessory = NSView(frame: NSRect(x: 0, y: 0, width: 260, height: needsPassword ? 52 : 20))
+        accessory.addSubview(configCheck)
+        if needsPassword {
+            accessory.addSubview(passwordField)
+        }
+        alert.accessoryView = accessory
+        if needsPassword {
+            alert.window.initialFirstResponder = passwordField
+        }
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        // 3. Merge into the current database
+        do {
+            let payload: [String: Any]
+            if let plain {
+                payload = plain
+            } else {
+                let password = passwordField.stringValue
+                guard !password.isEmpty else {
+                    let warn = NSAlert()
+                    warn.messageText = L.passwordEmpty
+                    warn.alertStyle = .warning
+                    warn.runModal()
+                    return
+                }
+                payload = try DataExporter.decrypt(fileData: fileData, password: password)
+            }
+            let summary = try Database.shared.importData(payload, includeConfig: configCheck.state == .on)
+            state.reloadAfterImport(configChanged: summary.configApplied)
+
+            let done = NSAlert()
+            done.messageText = L.importDone
+            done.informativeText = L.importSummary(
+                records: summary.recordsAdded,
+                sessions: summary.sessionsAdded,
+                skipped: summary.recordsSkipped + summary.sessionsSkipped,
+                rejected: summary.rejected
+            ) + "\n\n" + L.importBackupHint(summary.backupPath)
+            done.alertStyle = .informational
+            done.runModal()
+
+            withAnimation { importDone = true }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                withAnimation { importDone = false }
+            }
+        } catch {
+            showImportError(error.localizedDescription)
+        }
+    }
+
+    private func showImportError(_ message: String) {
+        let alert = NSAlert()
+        alert.messageText = L.importFailed
+        alert.informativeText = message
+        alert.alertStyle = .critical
+        alert.runModal()
     }
 }
 
