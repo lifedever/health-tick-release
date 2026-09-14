@@ -1,17 +1,17 @@
 {
-  "version": "1.6.31",
-  "notes_zh": "## HealthTick v1.6.31\n\n### ✨ 改进\n- 设置里原来的「计划」标签页拆成「计时」和「作息」两页：「计时」管多久（工作/休息时长、每日目标、长休息、护眼模式），「作息」管什么时候（工作日、国家节假日、工作时段、免打扰），不用再在一页里滚很远",
+  "version": "1.6.32",
+  "notes_zh": "## HealthTick v1.6.32\n\n### ✨ 新增功能\n- **导入数据**：设置 → 通用 → 导入数据，从导出的文件恢复打卡记录和设置。换电脑或重装后，把之前导出的文件导回来，徽章和统计会一并恢复\n- 导入是合并方式，和现有记录自动去重，同一份文件导入多次也不会产生重复记录\n- 导入前自动把当前数据备份到 `~/.health-tick/backups/`\n- 导出不再需要设密码，文件是明文 JSON，可以直接打开查看。旧版本导出的加密文件仍然能导入，会提示输入当时的密码\n- 导出文件名精确到秒，同一天导出多次不再互相覆盖\n\n### 🐞 Bug 修复\n- 重置数据后，「今日工作时长」和本周图表里当天的数据没有归零\n- 重置数据后，当时正在进行的那个工作周期结束时，这段时长会丢失",
   "notes_en": "",
   "downloads": {
     "Apple-Silicon": {
-      "url": "https://www.lifedever.com/health-tick-release/downloads/HealthTick-v1.6.31-Apple-Silicon.dmg",
-      "size": 2666665,
-      "sha256": "10c707d7116444693eba5af3bac9d2a17ea893cbd8ed57ee54c4daa7e2dd773c"
+      "url": "https://www.lifedever.com/health-tick-release/downloads/HealthTick-v1.6.32-Apple-Silicon.dmg",
+      "size": 2690780,
+      "sha256": "381b3679ffe5fcda6cf05022d0e72ab2006d4382af4f14951d42d390b97b56c9"
     },
     "Intel": {
-      "url": "https://www.lifedever.com/health-tick-release/downloads/HealthTick-v1.6.31-Intel.dmg",
-      "size": 2731063,
-      "sha256": "69f22502def62f230180c6b95f54ec46a2e1c689480b289bebb0001bb18b030c"
+      "url": "https://www.lifedever.com/health-tick-release/downloads/HealthTick-v1.6.32-Intel.dmg",
+      "size": 2754921,
+      "sha256": "26235f07c8b3af338b22a83099061c8e829651893a7f4557485ab726b17596df"
     }
   }
 }
